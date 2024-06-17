@@ -58,7 +58,7 @@ impl StopStage {
     }
 }
 
-fn main() {
+fn main() -> Result<()> {
     let args = CLI::parse();
 
     let stop_stage = StopStage::from_args(&args.stage_options);
