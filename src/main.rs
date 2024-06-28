@@ -1,6 +1,7 @@
 use anyhow::{Ok, Result};
 use clap::{Args, Parser};
-use std::{path::Path, process::Command};
+use hecate::Lexer;
+use std::{fs::read_to_string, path::Path, process::Command};
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = "Runs the Hecate C compiler")]
@@ -36,7 +37,7 @@ struct StageOptions {
 
 /// Which stage the compiler should stop at
 enum StopStage {
-    Lexer,
+    StopLexer,
     Parser,
     CodeGen,
     Assembler,
@@ -45,7 +46,7 @@ enum StopStage {
 impl StopStage {
     fn from_args(options: &StageOptions) -> Option<StopStage> {
         if options.lex {
-            return Some(StopStage::Lexer);
+            return Some(StopStage::StopLexer);
         } else if options.parse {
             return Some(StopStage::Parser);
         } else if options.codegen {
@@ -127,8 +128,36 @@ fn run_driver(path: &str, stop_stage: &Option<StopStage>) -> Result<()> {
 
 /// Actually run our compiler stages: Lexer, Parser, Codegen
 /// If no StopStage is specified, an assembly file is outputted with a ".s" extension
-/// Only Lexer, Parser, and Codegen StopStages are used
+/// Only Lexer, Parser, and Codegen StopStages are used in this function
 fn compile(path: &str, stop_stage: &Option<StopStage>) -> Result<()> {
     // This function will be responsible for actually deciding whether or not to output any files
-    todo!()
+
+    let source =
+        read_to_string(path).expect(format!("Unable to read source file: {}", path).as_str());
+
+    let lexer = Lexer::new();
+    let tokens = lexer.tokenize(&source)?;
+
+    if let Some(StopStage::StopLexer) = stop_stage {
+        // tokenize() should have returned any error by now
+        return Ok(());
+    }
+
+    // let parser = Parser::new();
+    // let ast = parser.run(tokens)?;
+
+    if let Some(StopStage::Parser) = stop_stage {
+        return Ok(());
+    }
+
+    // let codegen = CodeGenerator::new();
+    // let assembly = codegen.run(ast)?;
+
+    if let Some(StopStage::CodeGen) = stop_stage {
+        return Ok(());
+    }
+
+    // codegen.output(output_path);
+
+    Ok(())
 }
