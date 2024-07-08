@@ -1,7 +1,8 @@
 use anyhow::{Ok, Result};
 use clap::{Args, Parser};
-use hecate::Lexer;
-use std::{fs::read_to_string, path::Path, process::Command};
+use hecate::{Lexer, TokenType};
+use std::{fs::read_to_string, path::Path, process::Command, vec};
+use thiserror::Error;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = "Runs the Hecate C compiler")]
@@ -92,7 +93,7 @@ fn run_driver(path: &str, stop_stage: &Option<StopStage>) -> Result<()> {
         .expect("Failed to execute preprocessor process");
 
     // compile
-    let _compile_result = compile(path, stop_stage)?;
+    let _compile_result = compile(&pp_name, stop_stage)?;
 
     //delete preprocessed file
     Command::new("sh")
@@ -135,8 +136,38 @@ fn compile(path: &str, stop_stage: &Option<StopStage>) -> Result<()> {
     let source =
         read_to_string(path).expect(format!("Unable to read source file: {}", path).as_str());
 
-    let lexer = Lexer::new();
-    let tokens = lexer.tokenize(&source)?;
+    let mut lexer = Lexer::new(&source);
+
+    let (tokens, errors): (Vec<_>, Vec<_>) = lexer
+        .tokenize()
+        .partition(|t| t.kind != TokenType::Unknown && t.kind != TokenType::InvalidIdent);
+
+    if !errors.is_empty() {
+        let mut error_msgs = Vec::new();
+
+        for err in errors {
+            error_msgs.push(format!(
+                "{:?} at index {}: '{}'",
+                err.value,
+                err.start,
+                source[err.start..err.end].to_string()
+            ));
+        }
+
+        return Err(CompileErr::Lexer(error_msgs).into());
+    } else {
+        for t in tokens {
+            println!("{}", t);
+        }
+    }
+
+    // for token in lexer.tokenize() {
+    //     if token.kind != TokenType::Whitespace {
+    //         println!("{}", token);
+    //     } else {
+    //         continue;
+    //     }
+    // }
 
     if let Some(StopStage::StopLexer) = stop_stage {
         // tokenize() should have returned any error by now
@@ -160,4 +191,15 @@ fn compile(path: &str, stop_stage: &Option<StopStage>) -> Result<()> {
     // codegen.output(output_path);
 
     Ok(())
+}
+
+#[allow(dead_code)]
+#[derive(Error, Debug)]
+enum CompileErr {
+    #[error("Lexer encountered an error(s): {:#?}", .0)]
+    Lexer(Vec<String>),
+    #[error("Parser encountered an error: {:#?}", .0)]
+    Parser(Vec<String>),
+    #[error("Codegen encountered an error: {:#?}", .0)]
+    Codegen(Vec<String>),
 }
