@@ -19,26 +19,27 @@ pub struct Token {
     pub start: usize,
     pub end: usize,
     pub value: TokenValue,
+    pub line: i32,
+    pub col: i32,
 }
 
 impl Token {
-    fn new(kind: TokenType, start: usize, end: usize, value: TokenValue) -> Self {
+    fn new(
+        kind: TokenType,
+        start: usize,
+        end: usize,
+        value: TokenValue,
+        line: i32,
+        col: i32,
+    ) -> Self {
         Self {
             kind,
             start,
             end,
             value,
+            line,
+            col,
         }
-    }
-}
-
-impl fmt::Display for Token {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "TokenType: {:?}, Value: {:?}, Location: {}-{}",
-            self.kind, self.value, self.start, self.end
-        )
     }
 }
 
@@ -76,6 +77,8 @@ pub struct Lexer<'a> {
 
     /// Remaining source characters
     chars: Chars<'a>,
+    line: i32,
+    col: i32,
 }
 
 impl<'a> Lexer<'a> {
@@ -83,6 +86,8 @@ impl<'a> Lexer<'a> {
         Self {
             source,
             chars: source.chars(),
+            line: 1,
+            col: 1,
         }
     }
 
@@ -99,10 +104,20 @@ impl<'a> Lexer<'a> {
 
     fn scan_token(&mut self) -> Token {
         let start = self.offset();
+        let col = self.col;
 
         let c = match self.advance() {
             Some(c) => c,
-            None => return Token::new(TokenType::Eof, start, self.offset(), TokenValue::None),
+            None => {
+                return Token::new(
+                    TokenType::Eof,
+                    start,
+                    self.offset(),
+                    TokenValue::None,
+                    self.line,
+                    self.col,
+                )
+            }
         };
 
         let token_type = match c {
@@ -113,7 +128,12 @@ impl<'a> Lexer<'a> {
             ';' => TokenType::Semicolon,
             _c @ '0'..='9' => self.number(),
             _c @ 'a'..='z' | _c @ 'A'..='Z' | _c @ '_' => self.identifier(start),
-            ' ' | '\r' | '\t' | '\n' => TokenType::Whitespace,
+            ' ' | '\r' | '\t' => TokenType::Whitespace,
+            '\n' => {
+                self.line += 1;
+                self.col = 1;
+                TokenType::Whitespace
+            }
             _ => TokenType::Unknown,
         };
 
@@ -128,7 +148,7 @@ impl<'a> Lexer<'a> {
             _ => TokenValue::None,
         };
 
-        Token::new(token_type, start, end, token_value)
+        Token::new(token_type, start, end, token_value, self.line, col)
     }
 
     fn number(&mut self) -> TokenType {
@@ -173,6 +193,7 @@ impl<'a> Lexer<'a> {
 
     fn advance(&mut self) -> Option<char> {
         let c = self.chars.next()?;
+        self.col += 1;
 
         Some(c)
     }

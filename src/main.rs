@@ -147,9 +147,11 @@ fn compile(path: &str, stop_stage: &Option<StopStage>) -> Result<()> {
 
         for err in errors {
             error_msgs.push(format!(
-                "{:?} at index {}: '{}'",
+                "{:?} at {}:{}:{}: '{}'",
                 err.value,
-                err.start,
+                path.rsplit_once('/').unwrap().1,
+                err.line,
+                err.col,
                 source[err.start..err.end].to_string()
             ));
         }
@@ -157,7 +159,15 @@ fn compile(path: &str, stop_stage: &Option<StopStage>) -> Result<()> {
         return Err(CompileErr::Lexer(error_msgs).into());
     } else {
         for t in tokens {
-            println!("{}", t);
+            println!(
+                "TokenType: {:<10}, Value: {:<10}, Lexeme: {:<15}, Location: {}:{}:{}",
+                format!("{:?}", t.kind),
+                format!("{:?}", t.value),
+                format!("{:?}", source[t.start..t.end].to_string()),
+                path.rsplit_once('/').unwrap().1,
+                t.line,
+                t.col,
+            );
         }
     }
 
