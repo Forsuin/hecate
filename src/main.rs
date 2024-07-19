@@ -1,10 +1,12 @@
+use std::{fs::read_to_string, path::Path, process::Command};
+
 use anyhow::{Ok, Result};
-use clap::{Args, Parser};
-use hecate::{Lexer, TokenType};
-use std::{fs::read_to_string, path::Path, process::Command, vec};
+use clap::{Args, Parser as ClapParser};
 use thiserror::Error;
 
-#[derive(Parser, Debug)]
+use hecate::{Lexer, Parser, TokenType};
+
+#[derive(ClapParser, Debug)]
 #[command(version, about, long_about = "Runs the Hecate C compiler")]
 struct CLI {
     /// Path to C source file
@@ -38,7 +40,7 @@ struct StageOptions {
 
 /// Which stage the compiler should stop at
 enum StopStage {
-    StopLexer,
+    Lexer,
     Parser,
     CodeGen,
     Assembler,
@@ -47,7 +49,7 @@ enum StopStage {
 impl StopStage {
     fn from_args(options: &StageOptions) -> Option<StopStage> {
         if options.lex {
-            return Some(StopStage::StopLexer);
+            return Some(StopStage::Lexer);
         } else if options.parse {
             return Some(StopStage::Parser);
         } else if options.codegen {
@@ -71,7 +73,7 @@ fn main() -> Result<()> {
 fn run_driver(path: &str, stop_stage: &Option<StopStage>) -> Result<()> {
     let dir_path = Path::new(path);
 
-    // source code should always be inside of a directory, but better error handling can come later
+    // source code should always be inside a directory, but better error handling can come later
     let dir = dir_path.parent().unwrap();
     let file_name = dir_path
         .file_stem()
@@ -131,7 +133,7 @@ fn run_driver(path: &str, stop_stage: &Option<StopStage>) -> Result<()> {
 /// If no StopStage is specified, an assembly file is outputted with a ".s" extension
 /// Only Lexer, Parser, and Codegen StopStages are used in this function
 fn compile(path: &str, stop_stage: &Option<StopStage>) -> Result<()> {
-    // This function will be responsible for actually deciding whether or not to output any files
+    // This function will be responsible for actually deciding whether to output any files
 
     let source =
         read_to_string(path).expect(format!("Unable to read source file: {}", path).as_str());
@@ -158,17 +160,17 @@ fn compile(path: &str, stop_stage: &Option<StopStage>) -> Result<()> {
 
         return Err(CompileErr::Lexer(error_msgs).into());
     } else {
-        for t in tokens {
-            println!(
-                "TokenType: {:<10}, Value: {:<10}, Lexeme: {:<15}, Location: {}:{}:{}",
-                format!("{:?}", t.kind),
-                format!("{:?}", t.value),
-                format!("{:?}", source[t.start..t.end].to_string()),
-                path.rsplit_once('/').unwrap().1,
-                t.line,
-                t.col,
-            );
-        }
+        // for t in &tokens {
+        //     println!(
+        //         "TokenType: {:<10}, Value: {:<15}, Lexeme: {:<15}, Location: {}:{}:{}",
+        //         format!("{:?}", t.kind),
+        //         format!("{:?}", t.value),
+        //         format!("{:?}", source[t.start..t.end].to_string()),
+        //         path.rsplit_once('/').unwrap().1,
+        //         t.line,
+        //         t.col,
+        //     );
+        // }
     }
 
     // for token in lexer.tokenize() {
@@ -179,13 +181,13 @@ fn compile(path: &str, stop_stage: &Option<StopStage>) -> Result<()> {
     //     }
     // }
 
-    if let Some(StopStage::StopLexer) = stop_stage {
+    if let Some(StopStage::Lexer) = stop_stage {
         // tokenize() should have returned any error by now
         return Ok(());
     }
 
-    // let parser = Parser::new();
-    // let ast = parser.run(tokens)?;
+    let mut parser = Parser::new(tokens);
+    let _ast = parser.parse()?;
 
     if let Some(StopStage::Parser) = stop_stage {
         return Ok(());
@@ -211,5 +213,5 @@ enum CompileErr {
     #[error("Parser encountered an error: {:#?}", .0)]
     Parser(Vec<String>),
     #[error("Codegen encountered an error: {:#?}", .0)]
-    Codegen(Vec<String>),
+    CodeGen(Vec<String>),
 }
