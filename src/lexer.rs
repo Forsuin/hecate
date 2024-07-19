@@ -1,4 +1,3 @@
-use core::fmt;
 use std::str::Chars;
 
 use thiserror::Error;
@@ -10,10 +9,10 @@ pub enum LexError {
     #[error("invalid identifier")]
     InvalidIdentifier,
     #[error("unterminated string")]
-    UntermindatedString,
+    UnterminatedString,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Token {
     pub kind: TokenType,
     pub start: usize,
@@ -43,11 +42,12 @@ impl Token {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum TokenValue {
     None,
     Integer(i32),
     String(String),
+    Ident(String),
     Error(LexError),
 }
 
@@ -99,7 +99,7 @@ impl<'a> Lexer<'a> {
             } else {
                 None
             }
-        })
+        }).filter(|t| t.kind != TokenType::Whitespace)
     }
 
     fn scan_token(&mut self) -> Token {
@@ -142,6 +142,9 @@ impl<'a> Lexer<'a> {
         let token_value = match token_type {
             TokenType::Constant => {
                 TokenValue::Integer(self.source[start..end].parse::<i32>().unwrap())
+            }
+            TokenType::Identifier => {
+                TokenValue::Ident(self.source[start..end].to_string())
             }
             TokenType::Unknown => TokenValue::Error(LexError::UnexpectedChar),
             TokenType::InvalidIdent => TokenValue::Error(LexError::InvalidIdentifier),
