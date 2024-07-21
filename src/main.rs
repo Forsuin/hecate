@@ -4,7 +4,7 @@ use anyhow::{Ok, Result};
 use clap::{Args, Parser as ClapParser};
 use thiserror::Error;
 
-use hecate::{Lexer, Parser, TokenType};
+use hecate::{gen_assm, Lexer, Parser, TokenType};
 
 #[derive(ClapParser, Debug)]
 #[command(version, about, long_about = "Runs the Hecate C compiler")]
@@ -189,14 +189,15 @@ fn compile(path: &str, stop_stage: &Option<StopStage>) -> Result<()> {
     let mut parser = Parser::new(tokens);
     let ast = parser.parse()?;
 
-    println!("{:#?}", ast);
+    println!("AST:\n{:#?}", ast);
 
     if let Some(StopStage::Parser) = stop_stage {
         return Ok(());
     }
 
-    // let codegen = CodeGenerator::new();
-    // let assembly = codegen.run(ast)?;
+    let assm = gen_assm(&ast);
+
+    println!("ASSM:\n{:#?}", assm);
 
     if let Some(StopStage::CodeGen) = stop_stage {
         return Ok(());

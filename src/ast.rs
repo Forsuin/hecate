@@ -1,5 +1,3 @@
-use std::fmt::{Display, Formatter};
-
 /// Defines AST datatypes
 
 #[derive(Debug)]

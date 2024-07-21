@@ -17,29 +17,25 @@ impl Display for ParseError {
 
 impl ParseError {
     fn new(message: String) -> Self {
-        Self {
-            message,
-        }
+        Self { message }
     }
 }
 
 pub struct Parser {
-    tokens: std::vec::IntoIter<Token>
+    tokens: std::vec::IntoIter<Token>,
 }
 
 impl Parser {
     pub fn new(tokens: Vec<Token>) -> Self {
         Self {
-            tokens: tokens.into_iter()
+            tokens: tokens.into_iter(),
         }
     }
 
     pub fn parse(&mut self) -> Result<TranslationUnit, ParseError> {
         let func = self.parse_func()?;
         self.expect_empty()?;
-        Ok(TranslationUnit {
-            func
-        })
+        Ok(TranslationUnit { func })
     }
 
     fn parse_func(&mut self) -> Result<Func, ParseError> {
@@ -55,17 +51,23 @@ impl Parser {
 
         self.expect(TokenType::CloseBrace)?;
 
-        Ok(Func {
-            ident: name,
-            body,
-        })
+        Ok(Func { ident: name, body })
     }
 
     fn parse_ident(&mut self) -> Result<String, ParseError> {
         match self.tokens.next() {
-            Some(Token {kind: TokenType::Identifier, value: TokenValue::Ident(ident), ..}) => Ok(ident.to_string()),
-            Some(t) => Err(ParseError::new(format!("Expected an identifier, but found {:?}", t))),
-            None => Err(ParseError::new("Expected an identifier, but found end of file instead".to_string()))
+            Some(Token {
+                kind: TokenType::Identifier,
+                value: TokenValue::Ident(ident),
+                ..
+            }) => Ok(ident.to_string()),
+            Some(t) => Err(ParseError::new(format!(
+                "Expected an identifier, but found {:?}",
+                t
+            ))),
+            None => Err(ParseError::new(
+                "Expected an identifier, but found end of file instead".to_string(),
+            )),
         }
     }
 
@@ -76,18 +78,23 @@ impl Parser {
 
         self.expect(TokenType::Semicolon)?;
 
-        Ok(Stmt {
-            expr,
-        })
+        Ok(Stmt { expr })
     }
 
     fn parse_expr(&mut self) -> Result<Expr, ParseError> {
         match self.tokens.next() {
-            Some(Token {kind: TokenType::Constant, value: TokenValue::Integer(val), ..}) => Ok(Expr {
-                val
-            }),
-            Some(t) => Err(ParseError::new(format!("Expected an expression, but found {:?}", t))),
-            None => Err(ParseError::new("Expected an expression, but found end of file instead".to_string()))
+            Some(Token {
+                kind: TokenType::Constant,
+                value: TokenValue::Integer(val),
+                ..
+            }) => Ok(Expr { val }),
+            Some(t) => Err(ParseError::new(format!(
+                "Expected an expression, but found {:?}",
+                t
+            ))),
+            None => Err(ParseError::new(
+                "Expected an expression, but found end of file instead".to_string(),
+            )),
         }
     }
 
@@ -95,14 +102,20 @@ impl Parser {
     fn expect(&mut self, expected: TokenType) -> Result<Token, ParseError> {
         match self.tokens.next() {
             Some(t) if t.kind == expected => Ok(t),
-            Some(t) => Err( ParseError::new(format!("Expected {:?}, but found {:?}", expected, t))),
+            Some(t) => Err(ParseError::new(format!(
+                "Expected {:?}, but found {:?}",
+                expected, t
+            ))),
             None => Err(ParseError::new(format!("Unexpected end of file"))),
         }
     }
 
     fn expect_empty(&mut self) -> Result<(), ParseError> {
         match self.tokens.next() {
-            Some(t) => Err(ParseError::new(format!("Expected end of file, but found {:?}", t))),
+            Some(t) => Err(ParseError::new(format!(
+                "Expected end of file, but found {:?}",
+                t
+            ))),
             None => Ok(()),
         }
     }
