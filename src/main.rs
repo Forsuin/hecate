@@ -187,7 +187,9 @@ fn compile(path: &str, stop_stage: &Option<StopStage>) -> Result<()> {
     }
 
     let mut parser = Parser::new(tokens);
-    let _ast = parser.parse()?;
+    let ast = parser.parse()?;
+
+    println!("{:#?}", ast);
 
     if let Some(StopStage::Parser) = stop_stage {
         return Ok(());
