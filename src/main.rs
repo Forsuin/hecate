@@ -1,10 +1,10 @@
 use std::{fs::read_to_string, path::Path, process::Command};
-
+use std::io::Write;
 use anyhow::{Ok, Result};
 use clap::{Args, Parser as ClapParser};
 use thiserror::Error;
 
-use hecate::{gen_assm, Lexer, Parser, TokenType};
+use hecate::{gen_assm, Lexer, output, Parser, TokenType};
 
 #[derive(ClapParser, Debug)]
 #[command(version, about, long_about = "Runs the Hecate C compiler")]
@@ -83,6 +83,7 @@ fn run_driver(path: &str, stop_stage: &Option<StopStage>) -> Result<()> {
         .unwrap();
 
     let pp_name = format!("{}/{file_name}.i", dir.display());
+    let assembly_path = format!("{}/{file_name}.s", dir.display());
 
     // Preprocess input
     Command::new("gcc")
@@ -95,11 +96,10 @@ fn run_driver(path: &str, stop_stage: &Option<StopStage>) -> Result<()> {
         .expect("Failed to execute preprocessor process");
 
     // compile
-    let _compile_result = compile(&pp_name, stop_stage)?;
+    compile(&pp_name, stop_stage, &assembly_path)?;
 
     //delete preprocessed file
-    Command::new("sh")
-        .arg("rm")
+    Command::new("rm")
         .arg(&pp_name)
         .output()
         .expect("Failed to delete preprocessed file");
@@ -107,23 +107,24 @@ fn run_driver(path: &str, stop_stage: &Option<StopStage>) -> Result<()> {
     // Assemble and link only if we don't stop during compilation
     if let Some(_) = stop_stage {
     } else {
-        let assembly_path = format!("{}/{file_name}.s", dir.display());
         let output = format!("{}/{file_name}", dir.display());
 
         // Assemble and link
-        Command::new("gcc")
+        let output = Command::new("gcc")
             .arg(&assembly_path)
             .arg("-o")
             .arg(&output)
             .output()
             .expect("Failed to execute assembler and linker");
 
+        std::io::stdout().write_all(&output.stdout).unwrap();
+        std::io::stderr().write_all(&output.stderr).unwrap();
+
         //delete assembled file
-        Command::new("sh")
-            .arg("rm")
-            .arg(&assembly_path)
-            .output()
-            .expect("Failed to delete assembly file");
+        // Command::new("rm")
+        //     .arg(&assembly_path)
+        //     .output()
+        //     .expect("Failed to delete assembly file");
     }
 
     Ok(())
@@ -132,11 +133,12 @@ fn run_driver(path: &str, stop_stage: &Option<StopStage>) -> Result<()> {
 /// Actually run our compiler stages: Lexer, Parser, Codegen
 /// If no StopStage is specified, an assembly file is outputted with a ".s" extension
 /// Only Lexer, Parser, and Codegen StopStages are used in this function
-fn compile(path: &str, stop_stage: &Option<StopStage>) -> Result<()> {
+fn compile(path: &str, stop_stage: &Option<StopStage>, assm_path: &str) -> Result<()> {
     // This function will be responsible for actually deciding whether to output any files
 
     let source =
         read_to_string(path).expect(format!("Unable to read source file: {}", path).as_str());
+
 
     let mut lexer = Lexer::new(&source);
 
@@ -189,7 +191,7 @@ fn compile(path: &str, stop_stage: &Option<StopStage>) -> Result<()> {
     let mut parser = Parser::new(tokens);
     let ast = parser.parse()?;
 
-    println!("AST:\n{:#?}", ast);
+    //println!("AST:\n{:#?}", ast);
 
     if let Some(StopStage::Parser) = stop_stage {
         return Ok(());
@@ -197,13 +199,13 @@ fn compile(path: &str, stop_stage: &Option<StopStage>) -> Result<()> {
 
     let assm = gen_assm(&ast);
 
-    println!("ASSM:\n{:#?}", assm);
+    //println!("ASSM:\n{:#?}", assm);
 
     if let Some(StopStage::CodeGen) = stop_stage {
         return Ok(());
     }
 
-    // codegen.output(output_path);
+    output(assm_path, assm)?;
 
     Ok(())
 }
