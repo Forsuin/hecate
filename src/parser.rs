@@ -79,7 +79,7 @@ impl Parser {
 
         self.expect(TokenType::Semicolon)?;
 
-        Ok(Stmt { expr })
+        Ok(Stmt::Return{ expr })
     }
 
     fn parse_expr(&mut self) -> Result<Expr, ParseError> {
