@@ -63,6 +63,9 @@ pub enum TokenType {
     OpenBrace,
     CloseBrace,
     Semicolon,
+    Tilde,
+    Minus,
+    MinusMinus,
     Whitespace,
     Eof,
     InvalidIdent,
@@ -126,6 +129,13 @@ impl<'a> Lexer<'a> {
             '{' => TokenType::OpenBrace,
             '}' => TokenType::CloseBrace,
             ';' => TokenType::Semicolon,
+            '~' => TokenType::Tilde,
+            '-' => {
+              match self.peek() {
+                  '-' => TokenType::MinusMinus,
+                  _ => TokenType::Minus,
+              }
+            }
             _c @ '0'..='9' => self.number(),
             _c @ 'a'..='z' | _c @ 'A'..='Z' | _c @ '_' => self.identifier(start),
             ' ' | '\r' | '\t' => TokenType::Whitespace,
@@ -164,7 +174,6 @@ impl<'a> Lexer<'a> {
             while self.peek().is_alphanumeric() {
                 self.advance();
             }
-            return TokenType::InvalidIdent;
         }
 
         TokenType::Constant
@@ -199,5 +208,32 @@ impl<'a> Lexer<'a> {
         self.col += 1;
 
         Some(c)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn minus_minus() {
+        let src = "int main(void) { --5; }";
+
+        let mut lexer = Lexer::new(src);
+        let tokens = lexer.tokenize();
+
+        assert_eq!(tokens.filter(|t| t.kind == TokenType::MinusMinus).collect::<Vec<Token>>().len(), 1);
+    }
+
+    #[test]
+    fn double_minus_paren() {
+        let src = "int main(void) { -(-5); }";
+
+        let mut lexer = Lexer::new(src);
+        let tokens = lexer.tokenize();
+        let tokens: Vec<Token> = tokens.collect();
+
+        assert_eq!(tokens.iter().filter(|t| t.kind == TokenType::MinusMinus).collect::<Vec<_>>().len(), 0);
+        assert_eq!(tokens.iter().filter(|t| t.kind == TokenType::Minus).collect::<Vec<_>>().len(), 2)
     }
 }
