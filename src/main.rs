@@ -6,7 +6,7 @@ use clap::{Args, Parser as ClapParser};
 use thiserror::Error;
 
 use hecate::{gen_assm, Lexer, output, Parser, TokenType};
-
+use hecate::tacky_gen::gen_tacky;
 #[derive(ClapParser, Debug)]
 #[command(version, about, long_about = "Runs the Hecate C compiler")]
 struct CLI {
@@ -34,6 +34,9 @@ struct StageOptions {
     #[arg(long)]
     codegen: bool,
 
+    #[arg(long)]
+    tacky: bool,
+
     /// Emit assemly file, but do not assemble or link it
     #[arg(short = 'S')]
     s: bool,
@@ -45,6 +48,7 @@ enum StopStage {
     Parser,
     CodeGen,
     Assembler,
+    Tacky,
 }
 
 impl StopStage {
@@ -57,6 +61,8 @@ impl StopStage {
             return Some(StopStage::CodeGen);
         } else if options.s {
             return Some(StopStage::Assembler);
+        } else if options.tacky {
+            return Some(StopStage::Tacky);
         } else {
             return None;
         }
@@ -197,7 +203,14 @@ fn compile(path: &str, stop_stage: &Option<StopStage>, assm_path: &str) -> Resul
         return Ok(());
     }
 
-    let assm = gen_assm(&ast);
+
+    let tacky = gen_tacky(ast);
+
+    if let Some(StopStage::Tacky) = stop_stage {
+        return Ok(())
+    }
+
+    // let assm = gen_assm(&ast);
 
     //println!("ASSM:\n{:#?}", assm);
 
@@ -205,7 +218,7 @@ fn compile(path: &str, stop_stage: &Option<StopStage>, assm_path: &str) -> Resul
         return Ok(());
     }
 
-    output(assm_path, assm)?;
+    //output(assm_path, assm)?;
 
     Ok(())
 }
