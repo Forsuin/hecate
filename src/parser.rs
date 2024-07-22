@@ -1,8 +1,9 @@
 use std::fmt::{Display, Formatter};
+use std::iter::Peekable;
 
 use thiserror::Error;
 
-use crate::{Expr, Func, Stmt, Token, TokenType, TokenValue, TranslationUnit};
+use crate::{Expr, Func, Stmt, Token, TokenType, TokenValue, TranslationUnit, UnaryOp};
 
 #[derive(Error, Clone, Debug)]
 pub struct ParseError {
@@ -22,13 +23,13 @@ impl ParseError {
 }
 
 pub struct Parser {
-    tokens: std::vec::IntoIter<Token>,
+    tokens: Peekable<std::vec::IntoIter<Token>>,
 }
 
 impl Parser {
     pub fn new(tokens: Vec<Token>) -> Self {
         Self {
-            tokens: tokens.into_iter(),
+            tokens: tokens.into_iter().peekable(),
         }
     }
 
@@ -82,19 +83,60 @@ impl Parser {
     }
 
     fn parse_expr(&mut self) -> Result<Expr, ParseError> {
-        match self.tokens.next() {
+        match self.tokens.peek() {
+            Some(Token {
+                kind: TokenType::OpenParen,
+                ..
+            }) => {
+                self.tokens.next();
+                let expr = self.parse_expr()?;
+                self.expect(TokenType::CloseParen)?;
+
+                Ok(expr)
+            }
             Some(Token {
                 kind: TokenType::Constant,
                 value: TokenValue::Integer(val),
                 ..
-            }) => Ok(Expr { val }),
-            Some(t) => Err(ParseError::new(format!(
-                "Expected an expression, but found {:?}",
-                t
-            ))),
+            }) => {
+                let val = val.clone();
+                self.tokens.next();
+                Ok(Expr::Constant(val))
+            }
+            Some(_) => {
+                let unop = self.parse_unop()?;
+                let expr = self.parse_expr()?;
+
+                Ok(Expr::Unary {
+                    op: unop,
+                    expr: Box::new(expr),
+                })
+            }
             None => Err(ParseError::new(
                 "Expected an expression, but found end of file instead".to_string(),
             )),
+        }
+    }
+
+    fn parse_unop(&mut self) -> Result<UnaryOp, ParseError> {
+        match self.tokens.next() {
+            Some(Token {
+                kind: TokenType::Minus,
+                ..
+            }) => Ok(UnaryOp::Negate),
+            Some(Token {
+                kind: TokenType::Tilde,
+                ..
+            }) => Ok(UnaryOp::Complement),
+            Some(Token {
+                kind: TokenType::MinusMinus,
+                ..
+            }) => Err(ParseError::new(format!("Invalid operator '--'"))),
+            Some(t) => Err(ParseError::new(format!(
+                "Expected unary operator, found '{:?}'",
+                t
+            ))),
+            None => Err(ParseError::new(format!("Unexpected end of file"))),
         }
     }
 

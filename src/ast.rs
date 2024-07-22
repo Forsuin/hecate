@@ -17,6 +17,13 @@ pub struct Stmt {
 }
 
 #[derive(Debug)]
-pub struct Expr {
-    pub val: i32,
+pub enum Expr {
+    Constant(i32),
+    Unary { op: UnaryOp, expr: Box<Expr> },
+}
+
+#[derive(Debug)]
+pub enum UnaryOp {
+    Complement,
+    Negate,
 }
