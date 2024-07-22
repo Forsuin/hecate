@@ -13,7 +13,7 @@ pub struct Function {
 
 #[derive(Debug)]
 pub enum Instruction {
-    Mov{src: Operand, dest: Operand},
+    Mov { src: Operand, dest: Operand },
     Ret,
 }
 

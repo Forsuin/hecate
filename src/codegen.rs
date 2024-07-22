@@ -1,6 +1,7 @@
-use crate::{Expr, Func, Function, Instruction, Operand, Program, Stmt, TranslationUnit};
 use std::fs::File;
 use std::io::Write;
+
+use crate::{Expr, Func, Function, Instruction, Operand, Program, Stmt, TranslationUnit};
 
 pub fn gen_assm(ast: &TranslationUnit) -> Program {
     match &ast {
@@ -29,7 +30,12 @@ fn gen_stmts(stmt: &Stmt) -> Vec<Instruction> {
 }
 
 fn gen_expr(expr: &Expr) -> Operand {
-    Operand::Imm(expr.val)
+    match expr{
+        &Expr::Constant(val) => {
+            Operand::Imm(val)
+        }
+        _ => panic!("Fuck")
+    }
 }
 
 pub fn output(path: &str, assm: Program) -> std::io::Result<()> {

@@ -1,5 +1,6 @@
 use std::{fs::read_to_string, path::Path, process::Command};
 use std::io::Write;
+
 use anyhow::{Ok, Result};
 use clap::{Args, Parser as ClapParser};
 use thiserror::Error;
@@ -138,7 +139,6 @@ fn compile(path: &str, stop_stage: &Option<StopStage>, assm_path: &str) -> Resul
 
     let source =
         read_to_string(path).expect(format!("Unable to read source file: {}", path).as_str());
-
 
     let mut lexer = Lexer::new(&source);
 
