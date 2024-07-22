@@ -12,8 +12,8 @@ pub struct Func {
 }
 
 #[derive(Debug)]
-pub struct Stmt {
-    pub expr: Expr,
+pub enum Stmt {
+    Return { expr: Expr },
 }
 
 #[derive(Debug)]

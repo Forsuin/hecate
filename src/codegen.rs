@@ -19,7 +19,8 @@ fn gen_func(func: &Func) -> Function {
 }
 
 fn gen_stmts(stmt: &Stmt) -> Vec<Instruction> {
-    let expr = gen_expr(&stmt.expr);
+    todo!();
+    let expr = gen_expr(todo!());
     vec![
         Instruction::Mov {
             src: expr,
