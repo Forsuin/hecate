@@ -3,7 +3,7 @@ use std::iter::Peekable;
 
 use thiserror::Error;
 
-use crate::{Expr, Func, Stmt, Token, TokenType, TokenValue, TranslationUnit, UnaryOp};
+use crate::{Expr, Func, Stmt, Token, TokenType, TokenValue, TranslationUnit, ast::UnaryOp};
 
 #[derive(Error, Clone, Debug)]
 pub struct ParseError {

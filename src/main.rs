@@ -5,7 +5,8 @@ use anyhow::{Ok, Result};
 use clap::{Args, Parser as ClapParser};
 use thiserror::Error;
 
-use hecate::{gen_assm, Lexer, output, Parser, TokenType};
+use hecate::{Lexer, Parser, TokenType};
+use hecate::assembly_gen::gen_assm;
 use hecate::tacky_gen::gen_tacky;
 #[derive(ClapParser, Debug)]
 #[command(version, about, long_about = "Runs the Hecate C compiler")]
@@ -206,13 +207,15 @@ fn compile(path: &str, stop_stage: &Option<StopStage>, assm_path: &str) -> Resul
 
     let tacky = gen_tacky(ast);
 
+    println!("TACKY:\n{:#?}", tacky);
+
     if let Some(StopStage::Tacky) = stop_stage {
         return Ok(())
     }
 
-    // let assm = gen_assm(&ast);
+    let assm = gen_assm(&tacky);
 
-    //println!("ASSM:\n{:#?}", assm);
+    println!("ASSM:\n{:#?}", assm);
 
     if let Some(StopStage::CodeGen) = stop_stage {
         return Ok(());
@@ -223,7 +226,6 @@ fn compile(path: &str, stop_stage: &Option<StopStage>, assm_path: &str) -> Resul
     Ok(())
 }
 
-#[allow(dead_code)]
 #[derive(Error, Debug)]
 enum CompileErr {
     #[error("Lexer encountered an error(s): {:#?}", .0)]
