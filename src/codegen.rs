@@ -1,3 +1,9 @@
+pub mod tacky_gen;
+pub mod assembly_gen;
+
+pub use tacky_gen::*;
+pub use assembly_gen::*;
+
 use std::fs::File;
 use std::io::Write;
 
@@ -36,6 +42,7 @@ fn emit_instruction<W: Write>(writer: &mut W, instruction: Instruction) -> std::
             show_operand(&dest)
         )?,
         Instruction::Ret => writeln!(writer, "\tret")?,
+        _ => {}
     }
 
     Ok(())

@@ -6,8 +6,9 @@ use clap::{Args, Parser as ClapParser};
 use thiserror::Error;
 
 use hecate::{Lexer, Parser, TokenType};
-use hecate::assembly_gen::gen_assm;
-use hecate::tacky_gen::gen_tacky;
+use hecate::codegen;
+use hecate::codegen::{gen_assm, gen_tacky};
+
 #[derive(ClapParser, Debug)]
 #[command(version, about, long_about = "Runs the Hecate C compiler")]
 struct CLI {
@@ -213,9 +214,9 @@ fn compile(path: &str, stop_stage: &Option<StopStage>, assm_path: &str) -> Resul
         return Ok(())
     }
 
-    let assm = gen_assm(&tacky);
+    let assm_ast = gen_assm(&tacky);
 
-    println!("ASSM:\n{:#?}", assm);
+    println!("ASSM:\n{:#?}", assm_ast);
 
     if let Some(StopStage::CodeGen) = stop_stage {
         return Ok(());
