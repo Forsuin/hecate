@@ -60,7 +60,8 @@ static mut COUNTER: i32 = 0;
 
 fn make_temp_var() -> String {
     unsafe {
+        let string = format!("tmp.{}", COUNTER);
         COUNTER += 1;
-        format!("tmp.{}", COUNTER)
+        string
     }
 }
