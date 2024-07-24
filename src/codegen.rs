@@ -3,42 +3,6 @@ use std::io::Write;
 
 use crate::{Expr, Func, Function, Instruction, Operand, Program, Stmt, TranslationUnit};
 
-pub fn gen_assm(ast: &TranslationUnit) -> Program {
-    match &ast {
-        &TranslationUnit { func } => Program {
-            func: gen_func(&func),
-        },
-    }
-}
-
-fn gen_func(func: &Func) -> Function {
-    Function {
-        name: func.ident.clone(),
-        instructions: gen_stmts(&func.body),
-    }
-}
-
-fn gen_stmts(stmt: &Stmt) -> Vec<Instruction> {
-    todo!();
-    let expr = gen_expr(todo!());
-    vec![
-        Instruction::Mov {
-            src: expr,
-            dest: Operand::Register,
-        },
-        Instruction::Ret,
-    ]
-}
-
-fn gen_expr(expr: &Expr) -> Operand {
-    match expr{
-        &Expr::Constant(val) => {
-            Operand::Imm(val)
-        }
-        _ => panic!("Fuck")
-    }
-}
-
 pub fn output(path: &str, assm: Program) -> std::io::Result<()> {
     let mut output = File::create(path)?;
 
