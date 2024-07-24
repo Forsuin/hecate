@@ -208,7 +208,7 @@ fn compile(path: &str, stop_stage: &Option<StopStage>, assm_path: &str) -> Resul
 
     let tacky = gen_tacky(ast);
 
-    println!("TACKY:\n{:#?}", tacky);
+    // println!("TACKY:\n{:#?}", tacky);
 
     if let Some(StopStage::Tacky) = stop_stage {
         return Ok(())
@@ -216,7 +216,11 @@ fn compile(path: &str, stop_stage: &Option<StopStage>, assm_path: &str) -> Resul
 
     let assm_ast = gen_assm(&tacky);
 
-    println!("ASSM:\n{:#?}", assm_ast);
+    // println!("ASSM:\n{:#?}", assm_ast);
+
+    let replaced_ast = codegen::PseudoReplacer::replace_psuedos(&assm_ast);
+
+    println!("Replaced ASSM:\n{:#?}", replaced_ast);
 
     if let Some(StopStage::CodeGen) = stop_stage {
         return Ok(());
