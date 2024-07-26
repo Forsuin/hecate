@@ -218,9 +218,13 @@ fn compile(path: &str, stop_stage: &Option<StopStage>, assm_path: &str) -> Resul
 
     // println!("ASSM:\n{:#?}", assm_ast);
 
-    let replaced_ast = codegen::PseudoReplacer::replace_psuedos(&assm_ast);
+    let (mut replaced_ast, stack_size) = codegen::PseudoReplacer::replace_psuedos(&assm_ast);
 
-    println!("Replaced ASSM:\n{:#?}", replaced_ast);
+    // println!("Replaced ASSM:\n{:#?}", replaced_ast);
+
+    let fixed_ast = codegen::fix_instructions::fix_invalid_instructions(&mut replaced_ast, stack_size);
+
+    println!("Fixed ASSM:\n{:#?}", fixed_ast);
 
     if let Some(StopStage::CodeGen) = stop_stage {
         return Ok(());
