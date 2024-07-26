@@ -7,7 +7,7 @@ use thiserror::Error;
 
 use hecate::{Lexer, Parser, TokenType};
 use hecate::codegen;
-use hecate::codegen::{gen_assm, gen_tacky};
+use hecate::codegen::{gen_assm, gen_tacky, output};
 
 #[derive(ClapParser, Debug)]
 #[command(version, about, long_about = "Runs the Hecate C compiler")]
@@ -224,13 +224,13 @@ fn compile(path: &str, stop_stage: &Option<StopStage>, assm_path: &str) -> Resul
 
     let fixed_ast = codegen::fix_instructions::fix_invalid_instructions(&mut replaced_ast, stack_size);
 
-    println!("Fixed ASSM:\n{:#?}", fixed_ast);
+    //println!("Fixed ASSM:\n{:#?}", fixed_ast);
 
     if let Some(StopStage::CodeGen) = stop_stage {
         return Ok(());
     }
 
-    //output(assm_path, assm)?;
+    output(assm_path, fixed_ast)?;
 
     Ok(())
 }

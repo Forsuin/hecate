@@ -1,7 +1,7 @@
 use crate::assembly;
 
 pub fn fix_invalid_instructions(ast: &mut assembly::Program, stack_size: i32) -> assembly::Program {
-    let mut func = &mut ast.func;
+    let func = &mut ast.func;
 
     func.instructions.insert(0, assembly::Instruction::AllocateStack(stack_size));
 
