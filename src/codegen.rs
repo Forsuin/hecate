@@ -1,16 +1,13 @@
-pub mod tacky_gen;
-pub mod assembly_gen;
-mod replace_pseudoregs;
-
-pub use tacky_gen::*;
-pub use assembly_gen::*;
-pub use replace_pseudoregs::*;
-
-use std::fs::File;
 use std::io::Write;
 
-use crate::{Expr, Func, Function, Instruction, Operand, Program, Stmt, TranslationUnit};
+pub use assembly_gen::*;
+pub use replace_pseudoregisters::*;
+pub use tacky_gen::*;
 
+pub mod assembly_gen;
+pub mod fix_instructions;
+pub mod replace_pseudoregisters;
+pub mod tacky_gen;
 // pub fn output(path: &str, assm: Program) -> std::io::Result<()> {
 //     let mut output = File::create(path)?;
 //
