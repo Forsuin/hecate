@@ -131,10 +131,10 @@ impl<'a> Lexer<'a> {
             ';' => TokenType::Semicolon,
             '~' => TokenType::Tilde,
             '-' => {
-              match self.peek() {
-                  '-' => TokenType::MinusMinus,
-                  _ => TokenType::Minus,
-              }
+                match self.peek() {
+                    '-' => TokenType::MinusMinus,
+                    _ => TokenType::Minus,
+                }
             }
             _c @ '0'..='9' => self.number(),
             _c @ 'a'..='z' | _c @ 'A'..='Z' | _c @ '_' => self.identifier(start),

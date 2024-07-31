@@ -2,8 +2,8 @@ use std::fmt::{Display, Formatter};
 use std::iter::Peekable;
 
 use thiserror::Error;
-
-use crate::{Expr, Func, Stmt, Token, TokenType, TokenValue, TranslationUnit, ast::UnaryOp};
+use ast::*;
+use lexer::*;
 
 #[derive(Error, Clone, Debug)]
 pub struct ParseError {
@@ -58,10 +58,10 @@ impl Parser {
     fn parse_ident(&mut self) -> Result<String, ParseError> {
         match self.tokens.next() {
             Some(Token {
-                kind: TokenType::Identifier,
-                value: TokenValue::Ident(ident),
-                ..
-            }) => Ok(ident.to_string()),
+                     kind: TokenType::Identifier,
+                     value: TokenValue::Ident(ident),
+                     ..
+                 }) => Ok(ident.to_string()),
             Some(t) => Err(ParseError::new(format!(
                 "Expected an identifier, but found {:?}",
                 t
@@ -85,9 +85,9 @@ impl Parser {
     fn parse_expr(&mut self) -> Result<Expr, ParseError> {
         match self.tokens.peek() {
             Some(Token {
-                kind: TokenType::OpenParen,
-                ..
-            }) => {
+                     kind: TokenType::OpenParen,
+                     ..
+                 }) => {
                 self.tokens.next();
                 let expr = self.parse_expr()?;
                 self.expect(TokenType::CloseParen)?;
@@ -95,10 +95,10 @@ impl Parser {
                 Ok(expr)
             }
             Some(Token {
-                kind: TokenType::Constant,
-                value: TokenValue::Integer(val),
-                ..
-            }) => {
+                     kind: TokenType::Constant,
+                     value: TokenValue::Integer(val),
+                     ..
+                 }) => {
                 let val = val.clone();
                 self.tokens.next();
                 Ok(Expr::Constant(val))
@@ -121,17 +121,17 @@ impl Parser {
     fn parse_unop(&mut self) -> Result<UnaryOp, ParseError> {
         match self.tokens.next() {
             Some(Token {
-                kind: TokenType::Minus,
-                ..
-            }) => Ok(UnaryOp::Negate),
+                     kind: TokenType::Minus,
+                     ..
+                 }) => Ok(UnaryOp::Negate),
             Some(Token {
-                kind: TokenType::Tilde,
-                ..
-            }) => Ok(UnaryOp::Complement),
+                     kind: TokenType::Tilde,
+                     ..
+                 }) => Ok(UnaryOp::Complement),
             Some(Token {
-                kind: TokenType::MinusMinus,
-                ..
-            }) => Err(ParseError::new(format!("Invalid operator '--'"))),
+                     kind: TokenType::MinusMinus,
+                     ..
+                 }) => Err(ParseError::new(format!("Invalid operator '--'"))),
             Some(t) => Err(ParseError::new(format!(
                 "Expected unary operator, found '{:?}'",
                 t

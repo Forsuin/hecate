@@ -1,4 +1,4 @@
-use crate::{ast, tacky};
+pub mod tacky;
 
 pub fn gen_tacky(ast: ast::TranslationUnit) -> tacky::TranslationUnit {
     match ast {
@@ -55,7 +55,7 @@ fn tacky_unop(op: ast::UnaryOp) -> tacky::UnaryOp {
     }
 }
 
-// TODO: Change temp var to better system that includes way to provide name and other info
+
 static mut COUNTER: i32 = 0;
 
 fn make_temp_var() -> String {

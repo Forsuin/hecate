@@ -1,0 +1,16 @@
+[package]
+name = "hecate_driver"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.86"
+clap = { version = "4.5.12", features = ["derive"] }
+thiserror = "1.0.63"
+lexer = { path = "../lexer" }
+parser = { path = "../parser" }
+mir = { path = "../mir" }
+lir = { path = "../lir" }
+codegen = { path = "../codegen" }
+emission = { path = "../emission" }
+
