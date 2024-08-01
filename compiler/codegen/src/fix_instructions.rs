@@ -34,7 +34,7 @@ fn fix_instructions(instructions: &Vec<Instruction>) -> Vec<Instruction> {
                 });
             }
             Instruction::Binary { op, src, dest } => {
-                if matches!(op, BinaryOp::Add | BinaryOp::Sub) {
+                if matches!(op, BinaryOp::Add | BinaryOp::Sub | BinaryOp::And | BinaryOp::Or | BinaryOp::Xor) {
                     fixed_instr.push(Instruction::Mov {
                         src: src.clone(),
                         dest: Operand::Register(Register::R10),

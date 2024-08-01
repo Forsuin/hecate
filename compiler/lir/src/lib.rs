@@ -43,6 +43,11 @@ pub enum BinaryOp {
     Add,
     Sub,
     Mult,
+    And,
+    Or,
+    Xor,
+    Sal,
+    Sar,
 }
 
 #[derive(Debug, Clone)]
@@ -56,6 +61,7 @@ pub enum Operand {
 #[derive(Debug, Clone)]
 pub enum Register {
     AX,
+    CX,
     DX,
     R10,
     R11,

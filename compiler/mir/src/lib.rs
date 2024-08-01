@@ -82,6 +82,11 @@ fn tacky_binop(op: ast::BinaryOp) -> tacky::BinaryOp {
         BinaryOp::Multiply => tacky::BinaryOp::Multiply,
         BinaryOp::Divide => tacky::BinaryOp::Divide,
         BinaryOp::Modulo => tacky::BinaryOp::Modulo,
+        BinaryOp::BitwiseAnd => tacky::BinaryOp::BitwiseAnd,
+        BinaryOp::BitwiseOr => tacky::BinaryOp::BitwiseOr,
+        BinaryOp::BitwiseXor => tacky::BinaryOp::BitwiseXor,
+        BinaryOp::BitshiftLeft => tacky::BinaryOp::BitshiftLeft,
+        BinaryOp::BitshiftRight => tacky::BinaryOp::BitshiftRight,
     }
 }
 

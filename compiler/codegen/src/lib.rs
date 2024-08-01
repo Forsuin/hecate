@@ -1,5 +1,6 @@
 use lir::*;
 use mir::tacky;
+use mir::tacky::Val;
 
 use crate::fix_instructions::fix_invalid_instructions;
 use crate::replace_pseudoregisters::PseudoReplacer;
@@ -17,7 +18,7 @@ pub fn gen_assm(tacky: &tacky::TranslationUnit) -> Program {
             let mut replaced = PseudoReplacer::replace_psuedos(&prog);
 
             fix_invalid_instructions(&mut replaced.0, replaced.1)
-        },
+        }
     }
 }
 
@@ -49,19 +50,60 @@ fn gen_instructions(instructions: &Vec<tacky::Instruction>) -> Vec<Instruction> 
                     op: gen_unary(op),
                     dest: gen_operand(dest),
                 });
-            },
-            tacky::Instruction::Binary { op, first, second, dest } => {
+            }
+            tacky::Instruction::Binary {
+                op,
+                first,
+                second,
+                dest,
+            } => {
                 if matches!(op, tacky::BinaryOp::Divide | tacky::BinaryOp::Modulo) {
                     assm_instr.push(Instruction::Mov {
                         src: gen_operand(first),
-                        dest: Operand::Register(Register::AX)
+                        dest: Operand::Register(Register::AX),
                     });
                     assm_instr.push(Instruction::Cdq);
                     assm_instr.push(Instruction::Idiv(gen_operand(second)));
                     assm_instr.push(Instruction::Mov {
-                        src: Operand::Register(if *op == tacky::BinaryOp::Divide { Register::AX } else { Register::DX }),
+                        src: Operand::Register(if *op == tacky::BinaryOp::Divide {
+                            Register::AX
+                        } else {
+                            Register::DX
+                        }),
                         dest: gen_operand(dest),
                     })
+                } else if matches!(
+                    op,
+                    tacky::BinaryOp::BitshiftLeft | tacky::BinaryOp::BitshiftRight
+                ) {
+                    match second {
+                        Val::Constant(_) => {
+                            assm_instr.push(Instruction::Mov {
+                                src: gen_operand(first),
+                                dest: gen_operand(dest),
+                            });
+                            assm_instr.push(Instruction::Binary {
+                                op: gen_binary(op),
+                                src: gen_operand(second),
+                                dest: gen_operand(dest),
+                            });
+                        }
+                        _ => {
+                            assm_instr.push(Instruction::Mov {
+                                src: gen_operand(first),
+                                dest: gen_operand(dest),
+                            });
+                            assm_instr.push(Instruction::Mov {
+                                src: gen_operand(second),
+                                dest: Operand::Register(Register::CX),
+                            });
+                            assm_instr.push(Instruction::Binary {
+                                op: gen_binary(op),
+                                src: Operand::Register(Register::CX),
+                                dest: gen_operand(dest),
+                            });
+                        }
+                    }
                 } else {
                     assm_instr.push(Instruction::Mov {
                         src: gen_operand(first),
@@ -92,7 +134,12 @@ fn gen_binary(operator: &tacky::BinaryOp) -> BinaryOp {
         tacky::BinaryOp::Add => BinaryOp::Add,
         tacky::BinaryOp::Subtract => BinaryOp::Sub,
         tacky::BinaryOp::Multiply => BinaryOp::Mult,
-        _ => panic!("Unable to convert {:#?} into assembly BinaryOp", operator),
+        tacky::BinaryOp::BitwiseAnd => BinaryOp::And,
+        tacky::BinaryOp::BitwiseOr => BinaryOp::Or,
+        tacky::BinaryOp::BitwiseXor => BinaryOp::Xor,
+        tacky::BinaryOp::BitshiftLeft => BinaryOp::Sal,
+        tacky::BinaryOp::BitshiftRight => BinaryOp::Sar,
+         _ => panic!("Unable to convert {:#?} into assembly BinaryOp", operator),
     }
 }
 

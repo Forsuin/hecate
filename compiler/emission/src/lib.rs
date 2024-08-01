@@ -75,6 +75,11 @@ fn show_binary(op: BinaryOp) -> String {
         BinaryOp::Add => "addl".to_string(),
         BinaryOp::Sub => "subl".to_string(),
         BinaryOp::Mult => "imull".to_string(),
+        BinaryOp::And => "andl".to_string(),
+        BinaryOp::Or => "orl".to_string(),
+        BinaryOp::Xor => "xorl".to_string(),
+        BinaryOp::Sal => "sall".to_string(),
+        BinaryOp::Sar => "sarl".to_string(),
     }
 }
 
@@ -82,6 +87,7 @@ fn show_operand(op: Operand) -> String {
     match op {
         Operand::Register(reg) => format!("%{}", match reg {
             Register::AX => "eax",
+            Register::CX => "ecx",
             Register::DX => "edx",
             Register::R10 => "r10d",
             Register::R11 => "r11d",

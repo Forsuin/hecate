@@ -178,7 +178,7 @@ impl Parser {
                 ..
             }) => Ok(BinaryOp::Subtract),
             Some(Token {
-                kind: TokenType::Asterisk,
+                kind: TokenType::Star,
                 ..
             }) => Ok(BinaryOp::Multiply),
             Some(Token {
@@ -189,6 +189,26 @@ impl Parser {
                 kind: TokenType::Percent,
                 ..
             }) => Ok(BinaryOp::Modulo),
+            Some(Token {
+                kind: TokenType::Amp,
+                ..
+                 }) => Ok(BinaryOp::BitwiseAnd),
+            Some(Token {
+                     kind: TokenType::Pipe,
+                     ..
+                 }) => Ok(BinaryOp::BitwiseOr),
+            Some(Token {
+                     kind: TokenType::Xor,
+                     ..
+                 }) => Ok(BinaryOp::BitwiseXor),
+            Some(Token {
+                     kind: TokenType::LessLess,
+                     ..
+                 }) => Ok(BinaryOp::BitshiftLeft),
+            Some(Token {
+                     kind: TokenType::GreaterGreater,
+                     ..
+                 }) => Ok(BinaryOp::BitshiftRight),
             _ => Err(ParseError::new(format!(
                 "Expected binary operator, found {:?}",
                 t
@@ -221,8 +241,13 @@ impl Parser {
 
 fn get_precedence(token: TokenType) -> Option<i32> {
     match token {
-        TokenType::Asterisk | TokenType::Slash | TokenType::Percent => Some(50),
+        TokenType::Star | TokenType::Slash | TokenType::Percent => Some(50),
         TokenType::Plus | TokenType::Minus => Some(40),
+        TokenType::LessLess | TokenType::GreaterGreater => Some(35),
+        TokenType::Less | TokenType::Greater => Some(30),
+        TokenType::Amp => Some(25),
+        TokenType::Xor => Some(20),
+        TokenType::Pipe => Some(15),
         _ => None,
     }
 }

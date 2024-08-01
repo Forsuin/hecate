@@ -200,7 +200,7 @@ fn compile(path: &str, stop_stage: &Option<StopStage>, assm_path: &str) -> Resul
     let mut parser = Parser::new(tokens);
     let ast = parser.parse()?;
 
-    //println!("AST:\n{:#?}", ast);
+    // println!("AST:\n{:#?}", ast);
 
     if let Some(StopStage::Parser) = stop_stage {
         return Ok(());

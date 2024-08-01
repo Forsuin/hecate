@@ -67,9 +67,16 @@ pub enum TokenType {
     Minus,
     MinusMinus,
     Plus,
-    Asterisk,
+    Star,
     Slash,
     Percent,
+    Amp,
+    Pipe,
+    Less,
+    LessLess,
+    Greater,
+    GreaterGreater,
+    Xor,
     Whitespace,
     Eof,
     InvalidIdent,
@@ -106,7 +113,8 @@ impl<'a> Lexer<'a> {
             } else {
                 None
             }
-        }).filter(|t| t.kind != TokenType::Whitespace)
+        })
+        .filter(|t| t.kind != TokenType::Whitespace)
     }
 
     fn scan_token(&mut self) -> Token {
@@ -134,16 +142,34 @@ impl<'a> Lexer<'a> {
             '}' => TokenType::CloseBrace,
             ';' => TokenType::Semicolon,
             '~' => TokenType::Tilde,
-            '-' => {
-                match self.peek() {
-                    '-' => TokenType::MinusMinus,
-                    _ => TokenType::Minus,
+            '-' => match self.peek() {
+                '-' => {
+                    self.advance();
+                    TokenType::MinusMinus
                 }
+                _ => TokenType::Minus,
             },
             '+' => TokenType::Plus,
-            '*' => TokenType::Asterisk,
+            '*' => TokenType::Star,
             '/' => TokenType::Slash,
             '%' => TokenType::Percent,
+            '&' => TokenType::Amp,
+            '|' => TokenType::Pipe,
+            '^' => TokenType::Xor,
+            '<' => match self.peek() {
+                '<' => {
+                    self.advance();
+                    TokenType::LessLess
+                }
+                _ => TokenType::Less,
+            },
+            '>' => match self.peek() {
+                '>' => {
+                    self.advance();
+                    TokenType::GreaterGreater
+                }
+                _ => TokenType::Greater,
+            },
             _c @ '0'..='9' => self.number(),
             _c @ 'a'..='z' | _c @ 'A'..='Z' | _c @ '_' => self.identifier(start),
             ' ' | '\r' | '\t' => TokenType::Whitespace,
@@ -161,9 +187,7 @@ impl<'a> Lexer<'a> {
             TokenType::Constant => {
                 TokenValue::Integer(self.source[start..end].parse::<i32>().unwrap())
             }
-            TokenType::Identifier => {
-                TokenValue::Ident(self.source[start..end].to_string())
-            }
+            TokenType::Identifier => TokenValue::Ident(self.source[start..end].to_string()),
             TokenType::Unknown => TokenValue::Error(LexError::UnexpectedChar),
             TokenType::InvalidIdent => TokenValue::Error(LexError::InvalidIdentifier),
             _ => TokenValue::None,
@@ -230,7 +254,13 @@ mod tests {
         let mut lexer = Lexer::new(src);
         let tokens = lexer.tokenize();
 
-        assert_eq!(tokens.filter(|t| t.kind == TokenType::MinusMinus).collect::<Vec<Token>>().len(), 1);
+        assert_eq!(
+            tokens
+                .filter(|t| t.kind == TokenType::MinusMinus)
+                .collect::<Vec<Token>>()
+                .len(),
+            1
+        );
     }
 
     #[test]
@@ -241,7 +271,21 @@ mod tests {
         let tokens = lexer.tokenize();
         let tokens: Vec<Token> = tokens.collect();
 
-        assert_eq!(tokens.iter().filter(|t| t.kind == TokenType::MinusMinus).collect::<Vec<_>>().len(), 0);
-        assert_eq!(tokens.iter().filter(|t| t.kind == TokenType::Minus).collect::<Vec<_>>().len(), 2)
+        assert_eq!(
+            tokens
+                .iter()
+                .filter(|t| t.kind == TokenType::MinusMinus)
+                .collect::<Vec<_>>()
+                .len(),
+            0
+        );
+        assert_eq!(
+            tokens
+                .iter()
+                .filter(|t| t.kind == TokenType::Minus)
+                .collect::<Vec<_>>()
+                .len(),
+            2
+        )
     }
 }
