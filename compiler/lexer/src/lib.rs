@@ -66,6 +66,10 @@ pub enum TokenType {
     Tilde,
     Minus,
     MinusMinus,
+    Plus,
+    Asterisk,
+    Slash,
+    Percent,
     Whitespace,
     Eof,
     InvalidIdent,
@@ -135,7 +139,11 @@ impl<'a> Lexer<'a> {
                     '-' => TokenType::MinusMinus,
                     _ => TokenType::Minus,
                 }
-            }
+            },
+            '+' => TokenType::Plus,
+            '*' => TokenType::Asterisk,
+            '/' => TokenType::Slash,
+            '%' => TokenType::Percent,
             _c @ '0'..='9' => self.number(),
             _c @ 'a'..='z' | _c @ 'A'..='Z' | _c @ '_' => self.identifier(start),
             ' ' | '\r' | '\t' => TokenType::Whitespace,

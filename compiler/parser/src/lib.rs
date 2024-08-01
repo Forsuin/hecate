@@ -2,6 +2,7 @@ use std::fmt::{Display, Formatter};
 use std::iter::Peekable;
 
 use thiserror::Error;
+
 use ast::*;
 use lexer::*;
 
@@ -58,10 +59,10 @@ impl Parser {
     fn parse_ident(&mut self) -> Result<String, ParseError> {
         match self.tokens.next() {
             Some(Token {
-                     kind: TokenType::Identifier,
-                     value: TokenValue::Ident(ident),
-                     ..
-                 }) => Ok(ident.to_string()),
+                kind: TokenType::Identifier,
+                value: TokenValue::Ident(ident),
+                ..
+            }) => Ok(ident.to_string()),
             Some(t) => Err(ParseError::new(format!(
                 "Expected an identifier, but found {:?}",
                 t
@@ -75,37 +76,61 @@ impl Parser {
     fn parse_stmt(&mut self) -> Result<Stmt, ParseError> {
         self.expect(TokenType::Return)?;
 
-        let expr = self.parse_expr()?;
+        let expr = self.parse_expr(0)?;
 
         self.expect(TokenType::Semicolon)?;
 
-        Ok(Stmt::Return{ expr })
+        Ok(Stmt::Return { expr })
     }
 
-    fn parse_expr(&mut self) -> Result<Expr, ParseError> {
+    fn parse_expr(&mut self, min_prec: i32) -> Result<Expr, ParseError> {
+        let mut left = self.parse_factor()?;
+
+        while let Some(next) = self.tokens.peek() {
+            if let Some(prec) = get_precedence(next.kind) {
+                if prec >= min_prec {
+                    let operator = self.parse_binop()?;
+                    let right = self.parse_expr(prec + 1)?;
+                    left = Expr::Binary {
+                        op: operator,
+                        left: Box::new(left),
+                        right: Box::new(right),
+                    }
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+
+        Ok(left)
+    }
+
+    fn parse_factor(&mut self) -> Result<Expr, ParseError> {
         match self.tokens.peek() {
             Some(Token {
-                     kind: TokenType::OpenParen,
-                     ..
-                 }) => {
+                kind: TokenType::OpenParen,
+                ..
+            }) => {
                 self.tokens.next();
-                let expr = self.parse_expr()?;
+                let expr = self.parse_expr(0)?;
                 self.expect(TokenType::CloseParen)?;
 
                 Ok(expr)
             }
             Some(Token {
-                     kind: TokenType::Constant,
-                     value: TokenValue::Integer(val),
-                     ..
-                 }) => {
+                kind: TokenType::Constant,
+                value: TokenValue::Integer(val),
+                ..
+            }) => {
                 let val = val.clone();
                 self.tokens.next();
                 Ok(Expr::Constant(val))
             }
             Some(_) => {
                 let unop = self.parse_unop()?;
-                let expr = self.parse_expr()?;
+                let expr = self.parse_factor()?;
 
                 Ok(Expr::Unary {
                     op: unop,
@@ -121,22 +146,53 @@ impl Parser {
     fn parse_unop(&mut self) -> Result<UnaryOp, ParseError> {
         match self.tokens.next() {
             Some(Token {
-                     kind: TokenType::Minus,
-                     ..
-                 }) => Ok(UnaryOp::Negate),
+                kind: TokenType::Minus,
+                ..
+            }) => Ok(UnaryOp::Negate),
             Some(Token {
-                     kind: TokenType::Tilde,
-                     ..
-                 }) => Ok(UnaryOp::Complement),
+                kind: TokenType::Tilde,
+                ..
+            }) => Ok(UnaryOp::Complement),
             Some(Token {
-                     kind: TokenType::MinusMinus,
-                     ..
-                 }) => Err(ParseError::new(format!("Invalid operator '--'"))),
+                kind: TokenType::MinusMinus,
+                ..
+            }) => Err(ParseError::new(format!("Invalid operator '--'"))),
             Some(t) => Err(ParseError::new(format!(
                 "Expected unary operator, found '{:?}'",
                 t
             ))),
             None => Err(ParseError::new(format!("Unexpected end of file"))),
+        }
+    }
+
+    fn parse_binop(&mut self) -> Result<BinaryOp, ParseError> {
+        let t = self.tokens.next();
+
+        match t {
+            Some(Token {
+                kind: TokenType::Plus,
+                ..
+            }) => Ok(BinaryOp::Add),
+            Some(Token {
+                kind: TokenType::Minus,
+                ..
+            }) => Ok(BinaryOp::Subtract),
+            Some(Token {
+                kind: TokenType::Asterisk,
+                ..
+            }) => Ok(BinaryOp::Multiply),
+            Some(Token {
+                kind: TokenType::Slash,
+                ..
+            }) => Ok(BinaryOp::Divide),
+            Some(Token {
+                kind: TokenType::Percent,
+                ..
+            }) => Ok(BinaryOp::Modulo),
+            _ => Err(ParseError::new(format!(
+                "Expected binary operator, found {:?}",
+                t
+            ))),
         }
     }
 
@@ -160,5 +216,151 @@ impl Parser {
             ))),
             None => Ok(()),
         }
+    }
+}
+
+fn get_precedence(token: TokenType) -> Option<i32> {
+    match token {
+        TokenType::Asterisk | TokenType::Slash | TokenType::Percent => Some(50),
+        TokenType::Plus | TokenType::Minus => Some(40),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use lexer::*;
+
+    use super::*;
+
+    #[test]
+    fn simple_add() {
+        let src = "3 + 5";
+        let tokens = Lexer::new(src).tokenize().collect();
+
+        let ast = Parser::new(tokens).parse_expr(0).unwrap();
+
+        assert_eq!(
+            ast,
+            Expr::Binary {
+                op: BinaryOp::Add,
+                left: Box::new(Expr::Constant(3)),
+                right: Box::new(Expr::Constant(5)),
+            }
+        )
+    }
+
+    #[test]
+    fn simple_sub() {
+        let src = "3 - 5";
+        let tokens = Lexer::new(src).tokenize().collect();
+
+        let ast = Parser::new(tokens).parse_expr(0).unwrap();
+
+        assert_eq!(
+            ast,
+            Expr::Binary {
+                op: BinaryOp::Subtract,
+                left: Box::new(Expr::Constant(3)),
+                right: Box::new(Expr::Constant(5)),
+            }
+        )
+    }
+
+    #[test]
+    fn simple_mul() {
+        let src = "3 * 5";
+        let tokens = Lexer::new(src).tokenize().collect();
+
+        let ast = Parser::new(tokens).parse_expr(0).unwrap();
+
+        assert_eq!(
+            ast,
+            Expr::Binary {
+                op: BinaryOp::Multiply,
+                left: Box::new(Expr::Constant(3)),
+                right: Box::new(Expr::Constant(5)),
+            }
+        )
+    }
+
+    #[test]
+    fn simple_div() {
+        let src = "3 / 5";
+        let tokens = Lexer::new(src).tokenize().collect();
+
+        let ast = Parser::new(tokens).parse_expr(0).unwrap();
+
+        assert_eq!(
+            ast,
+            Expr::Binary {
+                op: BinaryOp::Divide,
+                left: Box::new(Expr::Constant(3)),
+                right: Box::new(Expr::Constant(5)),
+            }
+        )
+    }
+
+    #[test]
+    fn simple_mod() {
+        let src = "3 % 5";
+        let tokens = Lexer::new(src).tokenize().collect();
+
+        let ast = Parser::new(tokens).parse_expr(0).unwrap();
+
+        assert_eq!(
+            ast,
+            Expr::Binary {
+                op: BinaryOp::Modulo,
+                left: Box::new(Expr::Constant(3)),
+                right: Box::new(Expr::Constant(5)),
+            }
+        )
+    }
+
+    #[test]
+    fn triple_add() {
+        let src = "3 + 5 + 6";
+        let tokens = Lexer::new(src).tokenize().collect();
+
+        let ast = Parser::new(tokens).parse_expr(0).unwrap();
+
+        assert_eq!(
+            ast,
+            Expr::Binary {
+                op: BinaryOp::Add,
+                left: Box::new(Expr::Binary {
+                    op: BinaryOp::Add,
+                    left: Box::new(Expr::Constant(3)),
+                    right: Box::new(Expr::Constant(5)),
+                }),
+                right: Box::new(Expr::Constant(6)),
+            }
+        )
+    }
+
+    #[test]
+    fn add_mul() {
+        let src = "3 + 5 + 6 * 2";
+        let tokens = Lexer::new(src).tokenize().collect();
+
+        let ast = Parser::new(tokens).parse_expr(0).unwrap();
+
+        assert_eq!(
+            ast,
+            Expr::Binary {
+                op: BinaryOp::Add,
+                left: Box::new(Expr::Binary {
+                    op: BinaryOp::Add,
+                    left: Box::new(Expr::Constant(3)),
+                    right: Box::new(Expr::Constant(5)),
+                }),
+                right: Box::new(Expr::Binary {
+                    op: BinaryOp::Multiply,
+                    left: Box::new(Expr::Constant(6)),
+                    right: Box::new(Expr::Constant(2)),
+                }),
+            }
+        )
     }
 }
