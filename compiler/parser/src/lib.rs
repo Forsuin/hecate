@@ -363,4 +363,28 @@ mod tests {
             }
         )
     }
+
+    #[test]
+    fn add_with_unary() {
+        let src = "3 + 5 + (-6)";
+        let tokens = Lexer::new(src).tokenize().collect();
+
+        let ast = Parser::new(tokens).parse_expr(0).unwrap();
+
+        assert_eq!(
+            ast,
+            Expr::Binary {
+                op: BinaryOp::Add,
+                left: Box::new(Expr::Binary {
+                    op: BinaryOp::Add,
+                    left: Box::new(Expr::Constant(3)),
+                    right: Box::new(Expr::Constant(5)),
+                }),
+                right: Box::new(Expr::Unary {
+                    op: UnaryOp::Negate,
+                    expr: Box::new(Expr::Constant(6))
+                }),
+            }
+        )
+    }
 }

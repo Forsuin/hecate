@@ -19,29 +19,25 @@ impl PseudoReplacer {
 
     fn replace_operand(&mut self, operand: &Operand) -> Operand {
         match operand {
-            Operand::Pseudo(var) => {
-                match self.offset_map.get(var) {
-                    None => {
-                        let new_offset = self.current_offset + 4;
-                        self.current_offset = new_offset;
-                        self.offset_map.insert(var.clone(), new_offset);
-                        Operand::Stack(new_offset)
-                    }
-                    Some(offset) => {
-                        Operand::Stack(*offset)
-                    }
+            Operand::Pseudo(var) => match self.offset_map.get(var) {
+                None => {
+                    let new_offset = self.current_offset + 4;
+                    self.current_offset = new_offset;
+                    self.offset_map.insert(var.clone(), new_offset);
+                    Operand::Stack(new_offset)
                 }
-            }
-            _ => operand.clone()
+                Some(offset) => Operand::Stack(*offset),
+            },
+            _ => operand.clone(),
         }
     }
 
     fn replace_instruction(&mut self, instruction: &Instruction) -> Instruction {
         match instruction {
-            Instruction::Mov {src, dest} => {
+            Instruction::Mov { src, dest } => {
                 let src = self.replace_operand(src);
                 let dest = self.replace_operand(dest);
-                Instruction::Mov {src, dest}
+                Instruction::Mov { src, dest }
             }
             Instruction::Unary { op, dest } => {
                 let dest = self.replace_operand(dest);
@@ -53,9 +49,21 @@ impl PseudoReplacer {
             Instruction::AllocateStack(_) => {
                 panic!("AllocateStack should not be present");
             }
-            Instruction::Ret => {
-                Instruction::Ret
+            Instruction::Ret => Instruction::Ret,
+            Instruction::Binary { op, src, dest } => {
+                let src = self.replace_operand(src);
+                let dest = self.replace_operand(dest);
+                Instruction::Binary {
+                    op: op.clone(),
+                    src,
+                    dest,
+                }
             }
+            Instruction::Idiv(op) => {
+                let op = self.replace_operand(op);
+                Instruction::Idiv(op)
+            }
+            Instruction::Cdq => Instruction::Cdq,
         }
     }
 

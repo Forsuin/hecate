@@ -1,5 +1,6 @@
-use mir::tacky;
 use lir::*;
+use mir::tacky;
+
 use crate::fix_instructions::fix_invalid_instructions;
 use crate::replace_pseudoregisters::PseudoReplacer;
 
@@ -48,6 +49,30 @@ fn gen_instructions(instructions: &Vec<tacky::Instruction>) -> Vec<Instruction> 
                     op: gen_unary(op),
                     dest: gen_operand(dest),
                 });
+            },
+            tacky::Instruction::Binary { op, first, second, dest } => {
+                if matches!(op, tacky::BinaryOp::Divide | tacky::BinaryOp::Modulo) {
+                    assm_instr.push(Instruction::Mov {
+                        src: gen_operand(first),
+                        dest: Operand::Register(Register::AX)
+                    });
+                    assm_instr.push(Instruction::Cdq);
+                    assm_instr.push(Instruction::Idiv(gen_operand(second)));
+                    assm_instr.push(Instruction::Mov {
+                        src: Operand::Register(if *op == tacky::BinaryOp::Divide { Register::AX } else { Register::DX }),
+                        dest: gen_operand(dest),
+                    })
+                } else {
+                    assm_instr.push(Instruction::Mov {
+                        src: gen_operand(first),
+                        dest: gen_operand(dest),
+                    });
+                    assm_instr.push(Instruction::Binary {
+                        op: gen_binary(op),
+                        src: gen_operand(second),
+                        dest: gen_operand(dest),
+                    })
+                }
             }
         }
     }
@@ -59,6 +84,15 @@ fn gen_unary(operator: &tacky::UnaryOp) -> UnaryOp {
     match operator {
         tacky::UnaryOp::Complement => UnaryOp::Not,
         tacky::UnaryOp::Negate => UnaryOp::Neg,
+    }
+}
+
+fn gen_binary(operator: &tacky::BinaryOp) -> BinaryOp {
+    match operator {
+        tacky::BinaryOp::Add => BinaryOp::Add,
+        tacky::BinaryOp::Subtract => BinaryOp::Sub,
+        tacky::BinaryOp::Multiply => BinaryOp::Mult,
+        _ => panic!("Unable to convert {:#?} into assembly BinaryOp", operator),
     }
 }
 

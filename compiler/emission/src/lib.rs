@@ -47,6 +47,16 @@ fn emit_instruction<W: Write>(writer: &mut W, instruction: Instruction) -> std::
         },
         Instruction::AllocateStack(amt) => {
             writeln!(writer, "\tsubq ${}, %rsp", amt)?;
+        },
+
+        Instruction::Binary { op, src, dest } => {
+            writeln!(writer, "\t{} {}, {}", show_binary(op), show_operand(src), show_operand(dest))?;
+        }
+        Instruction::Idiv(op) => {
+            writeln!(writer, "\tidivl {}", show_operand(op))?;
+        }
+        Instruction::Cdq => {
+            writeln!(writer, "\tcdq")?;
         }
     }
 
@@ -60,11 +70,21 @@ fn show_unary(op: UnaryOp) -> String {
     }
 }
 
+fn show_binary(op: BinaryOp) -> String {
+    match op {
+        BinaryOp::Add => "addl".to_string(),
+        BinaryOp::Sub => "subl".to_string(),
+        BinaryOp::Mult => "imull".to_string(),
+    }
+}
+
 fn show_operand(op: Operand) -> String {
     match op {
         Operand::Register(reg) => format!("%{}", match reg {
             Register::AX => "eax",
+            Register::DX => "edx",
             Register::R10 => "r10d",
+            Register::R11 => "r11d",
         }),
         Operand::Stack(amt) => format!("{}(%rbp)", -amt),
         Operand::Imm(val) => format!("${}", val),
