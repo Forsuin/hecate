@@ -27,6 +27,7 @@ pub enum Expr {
 pub enum UnaryOp {
     Complement,
     Negate,
+    Not,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -36,6 +37,18 @@ pub enum BinaryOp {
     Multiply,
     Divide,
     Modulo,
+
+    // Logical and Relational Operators
+    And,
+    Or,
+    Equal,
+    NotEqual,
+    Less,
+    LessEqual,
+    Greater,
+    GreaterEqual,
+
+    // Bitwise Operators
     BitwiseAnd,
     BitwiseOr,
     BitwiseXor,

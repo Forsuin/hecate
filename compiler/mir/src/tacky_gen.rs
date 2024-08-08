@@ -71,6 +71,7 @@ fn tacky_unop(op: ast::UnaryOp) -> tacky::UnaryOp {
     match op {
         ast::UnaryOp::Complement => tacky::UnaryOp::Complement,
         ast::UnaryOp::Negate => tacky::UnaryOp::Negate,
+        _ => todo!()
     }
 }
 
@@ -86,6 +87,7 @@ fn tacky_binop(op: ast::BinaryOp) -> tacky::BinaryOp {
         BinaryOp::BitwiseXor => tacky::BinaryOp::BitwiseXor,
         BinaryOp::BitshiftLeft => tacky::BinaryOp::BitshiftLeft,
         BinaryOp::BitshiftRight => tacky::BinaryOp::BitshiftRight,
+        _ => todo!()
     }
 }
 

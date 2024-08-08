@@ -154,6 +154,10 @@ impl Parser {
                 ..
             }) => Ok(UnaryOp::Complement),
             Some(Token {
+                kind: TokenType::Bang,
+                ..
+            }) => Ok(UnaryOp::Not),
+            Some(Token {
                 kind: TokenType::MinusMinus,
                 ..
             }) => Err(ParseError::new(format!("Invalid operator '--'"))),
@@ -189,6 +193,41 @@ impl Parser {
                 kind: TokenType::Percent,
                 ..
             }) => Ok(BinaryOp::Modulo),
+
+            Some(Token {
+                kind: TokenType::Less,
+                ..
+            }) => Ok(BinaryOp::Less),
+            Some(Token {
+                kind: TokenType::LessEqual,
+                ..
+            }) => Ok(BinaryOp::LessEqual),
+            Some(Token {
+                kind: TokenType::Greater,
+                ..
+            }) => Ok(BinaryOp::Greater),
+            Some(Token {
+                kind: TokenType::GreaterEqual,
+                ..
+            }) => Ok(BinaryOp::GreaterEqual),
+            Some(Token {
+                kind: TokenType::AmpAmp,
+                ..
+            }) => Ok(BinaryOp::And),
+            Some(Token {
+                kind: TokenType::PipePipe,
+                ..
+            }) => Ok(BinaryOp::Or),
+            Some(Token {
+                kind: TokenType::EqualEqual,
+                ..
+            }) => Ok(BinaryOp::Equal),
+            Some(Token {
+                kind: TokenType::BangEqual,
+                ..
+            }) => Ok(BinaryOp::NotEqual),
+
+            // Bitwise
             Some(Token {
                 kind: TokenType::Amp,
                 ..
@@ -242,12 +281,17 @@ impl Parser {
 fn get_precedence(token: TokenType) -> Option<i32> {
     match token {
         TokenType::Star | TokenType::Slash | TokenType::Percent => Some(50),
-        TokenType::Plus | TokenType::Minus => Some(40),
-        TokenType::LessLess | TokenType::GreaterGreater => Some(35),
-        TokenType::Less | TokenType::Greater => Some(30),
+        TokenType::Plus | TokenType::Minus => Some(45),
+        TokenType::LessLess | TokenType::GreaterGreater => Some(40),
+        TokenType::Less | TokenType::LessEqual | TokenType::Greater | TokenType::GreaterEqual => {
+            Some(35)
+        }
+        TokenType::EqualEqual | TokenType::BangEqual => Some(30),
         TokenType::Amp => Some(25),
         TokenType::Xor => Some(20),
         TokenType::Pipe => Some(15),
+        TokenType::AmpAmp => Some(10),
+        TokenType::PipePipe => Some(5),
         _ => None,
     }
 }

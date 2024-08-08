@@ -53,17 +53,19 @@ pub enum TokenValue {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TokenType {
-    Identifier,
-    Int,
-    Void,
-    Return,
-    Constant,
+    // Single-character tokens
     OpenParen,
     CloseParen,
     OpenBrace,
     CloseBrace,
     Semicolon,
     Tilde,
+
+    // One or two character tokens
+    Bang,
+    BangEqual,
+    Equal,
+    EqualEqual,
     Minus,
     MinusMinus,
     Plus,
@@ -71,12 +73,27 @@ pub enum TokenType {
     Slash,
     Percent,
     Amp,
+    AmpAmp,
     Pipe,
+    PipePipe,
     Less,
     LessLess,
+    LessEqual,
     Greater,
     GreaterGreater,
+    GreaterEqual,
     Xor,
+
+    // Literals
+    Identifier,
+    Constant,
+
+    // Keywords
+    Int,
+    Void,
+    Return,
+
+    // Informational
     Whitespace,
     Eof,
     InvalidIdent,
@@ -153,13 +170,51 @@ impl<'a> Lexer<'a> {
             '*' => TokenType::Star,
             '/' => TokenType::Slash,
             '%' => TokenType::Percent,
-            '&' => TokenType::Amp,
-            '|' => TokenType::Pipe,
+            '!' => {
+                match self.peek() {
+                    '=' => {
+                        self.advance();
+                        TokenType::BangEqual
+                    }
+                    _ => TokenType::Bang
+                }
+            },
+            '=' => {
+                match self.peek() {
+                    '=' => {
+                        self.advance();
+                        TokenType::EqualEqual
+                    }
+                    _ => TokenType::Equal
+                }
+            }
+            '&' => {
+                match self.peek() {
+                    '&' => {
+                        self.advance();
+                        TokenType::AmpAmp
+                    }
+                    _ => TokenType::Amp
+                }
+            },
+            '|' => {
+                match self.peek() {
+                    '|' => {
+                        self.advance();
+                        TokenType::PipePipe
+                    }
+                    _ => TokenType::Pipe
+                }
+            },
             '^' => TokenType::Xor,
             '<' => match self.peek() {
                 '<' => {
                     self.advance();
                     TokenType::LessLess
+                },
+                '=' => {
+                    self.advance();
+                    TokenType::LessEqual
                 }
                 _ => TokenType::Less,
             },
@@ -167,6 +222,10 @@ impl<'a> Lexer<'a> {
                 '>' => {
                     self.advance();
                     TokenType::GreaterGreater
+                }
+                '=' => {
+                    self.advance();
+                    TokenType::GreaterEqual
                 }
                 _ => TokenType::Greater,
             },
