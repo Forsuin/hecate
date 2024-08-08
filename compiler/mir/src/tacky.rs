@@ -12,8 +12,33 @@ pub struct Func {
 #[derive(Debug, Eq, PartialEq)]
 pub enum Instruction {
     Return(Val),
-    Unary { op: UnaryOp, src: Val, dest: Val },
-    Binary { op: BinaryOp, first: Val, second: Val, dest: Val },
+    Unary {
+        op: UnaryOp,
+        src: Val,
+        dest: Val,
+    },
+    Binary {
+        op: BinaryOp,
+        first: Val,
+        second: Val,
+        dest: Val,
+    },
+    Copy {
+        src: Val,
+        dest: Val,
+    },
+    Jump {
+        target: String,
+    },
+    JumpIfZero {
+        condition: Val,
+        target: String,
+    },
+    JumpIfNotZero {
+        condition: Val,
+        target: String,
+    },
+    Label(String),
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -26,6 +51,7 @@ pub enum Val {
 pub enum UnaryOp {
     Complement,
     Negate,
+    Not,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -35,6 +61,16 @@ pub enum BinaryOp {
     Multiply,
     Divide,
     Modulo,
+
+    // Logical
+    Equal,
+    NotEqual,
+    Less,
+    LessEqual,
+    Greater,
+    GreaterEqual,
+
+    // Bitwise
     BitwiseAnd,
     BitwiseOr,
     BitwiseXor,

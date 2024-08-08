@@ -1,4 +1,5 @@
 use ast::BinaryOp;
+
 use crate::tacky;
 
 pub fn gen_tacky(ast: ast::TranslationUnit) -> tacky::TranslationUnit {
@@ -46,6 +47,90 @@ fn tacky_expr(expr: ast::Expr) -> (Vec<tacky::Instruction>, tacky::Val) {
 
             (instructions, dest)
         }
+        ast::Expr::Binary {
+            op: BinaryOp::And,
+            left,
+            right,
+        } => {
+            let (left_instr, v1) = tacky_expr(*left);
+            let (right_instr, v2) = tacky_expr(*right);
+            let false_label = make_label("and_false_branch");
+            let end_label = make_label("and_end");
+            let dest_name = make_temp();
+            let dest = tacky::Val::Var(dest_name);
+
+            let instructions = left_instr
+                .into_iter()
+                .chain(vec![tacky::Instruction::JumpIfZero {
+                    condition: v1,
+                    target: false_label.clone(),
+                }])
+                .chain(right_instr)
+                .chain(vec![
+                    tacky::Instruction::JumpIfZero {
+                        condition: v2,
+                        target: false_label.clone(),
+                    },
+                    tacky::Instruction::Copy {
+                        src: tacky::Val::Constant(1),
+                        dest: dest.clone(),
+                    },
+                    tacky::Instruction::Jump {
+                        target: end_label.clone(),
+                    },
+                    tacky::Instruction::Label(false_label),
+                    tacky::Instruction::Copy {
+                        src: tacky::Val::Constant(0),
+                        dest: dest.clone(),
+                    },
+                    tacky::Instruction::Label(end_label),
+                ])
+                .collect();
+
+            (instructions, dest)
+        }
+        ast::Expr::Binary {
+            op: BinaryOp::Or,
+            left,
+            right,
+        } => {
+            let (left_instr, v1) = tacky_expr(*left);
+            let (right_instr, v2) = tacky_expr(*right);
+            let true_label = make_label("or_true_branch");
+            let end_label = make_label("or_end");
+            let dest_name = make_temp();
+            let dest = tacky::Val::Var(dest_name);
+
+            let instructions = left_instr
+                .into_iter()
+                .chain(vec![tacky::Instruction::JumpIfNotZero {
+                    condition: v1,
+                    target: true_label.clone(),
+                }])
+                .chain(right_instr)
+                .chain(vec![
+                    tacky::Instruction::JumpIfNotZero {
+                        condition: v2,
+                        target: true_label.clone(),
+                    },
+                    tacky::Instruction::Copy {
+                        src: tacky::Val::Constant(0),
+                        dest: dest.clone(),
+                    },
+                    tacky::Instruction::Jump {
+                        target: end_label.clone(),
+                    },
+                    tacky::Instruction::Label(true_label),
+                    tacky::Instruction::Copy {
+                        src: tacky::Val::Constant(1),
+                        dest: dest.clone(),
+                    },
+                    tacky::Instruction::Label(end_label),
+                ])
+                .collect();
+
+            (instructions, dest)
+        }
         ast::Expr::Binary { op, left, right } => {
             let (left_instr, left_inner) = tacky_expr(*left);
             let (mut right_instr, right_inner) = tacky_expr(*right);
@@ -71,7 +156,7 @@ fn tacky_unop(op: ast::UnaryOp) -> tacky::UnaryOp {
     match op {
         ast::UnaryOp::Complement => tacky::UnaryOp::Complement,
         ast::UnaryOp::Negate => tacky::UnaryOp::Negate,
-        _ => todo!()
+        ast::UnaryOp::Not => tacky::UnaryOp::Not,
     }
 }
 
@@ -82,21 +167,51 @@ fn tacky_binop(op: ast::BinaryOp) -> tacky::BinaryOp {
         BinaryOp::Multiply => tacky::BinaryOp::Multiply,
         BinaryOp::Divide => tacky::BinaryOp::Divide,
         BinaryOp::Modulo => tacky::BinaryOp::Modulo,
+
+        // Logical
+        BinaryOp::Equal => tacky::BinaryOp::Equal,
+        BinaryOp::NotEqual => tacky::BinaryOp::NotEqual,
+        BinaryOp::Less => tacky::BinaryOp::Less,
+        BinaryOp::LessEqual => tacky::BinaryOp::LessEqual,
+        BinaryOp::Greater => tacky::BinaryOp::Greater,
+        BinaryOp::GreaterEqual => tacky::BinaryOp::GreaterEqual,
+
+        // Bitwise
         BinaryOp::BitwiseAnd => tacky::BinaryOp::BitwiseAnd,
         BinaryOp::BitwiseOr => tacky::BinaryOp::BitwiseOr,
         BinaryOp::BitwiseXor => tacky::BinaryOp::BitwiseXor,
         BinaryOp::BitshiftLeft => tacky::BinaryOp::BitshiftLeft,
         BinaryOp::BitshiftRight => tacky::BinaryOp::BitshiftRight,
-        _ => todo!()
+
+        BinaryOp::And | BinaryOp::Or => {
+            panic!("Internal error, cannot convert {:?} directly to TACKY", op)
+        }
     }
 }
 
-static mut COUNTER: i32 = 0;
+static mut VAR_COUNTER: i32 = 0;
+static mut LABEL_COUNTER: i32 = 0;
 
 fn make_temp_var() -> String {
     unsafe {
-        let string = format!("tmp.{}", COUNTER);
-        COUNTER += 1;
+        let string = format!("tmp.{}", VAR_COUNTER);
+        VAR_COUNTER += 1;
+        string
+    }
+}
+
+fn make_temp() -> String {
+    unsafe {
+        let string = format!("tmp.{}", LABEL_COUNTER);
+        LABEL_COUNTER += 1;
+        string
+    }
+}
+
+fn make_label(prefix: &str) -> String {
+    unsafe {
+        let string = format!("{}.{}", prefix, LABEL_COUNTER);
+        LABEL_COUNTER += 1;
         string
     }
 }

@@ -116,6 +116,7 @@ fn gen_instructions(instructions: &Vec<tacky::Instruction>) -> Vec<Instruction> 
                     })
                 }
             }
+            _ => todo!()
         }
     }
 
@@ -126,6 +127,7 @@ fn gen_unary(operator: &tacky::UnaryOp) -> UnaryOp {
     match operator {
         tacky::UnaryOp::Complement => UnaryOp::Not,
         tacky::UnaryOp::Negate => UnaryOp::Neg,
+        _ => todo!()
     }
 }
 
