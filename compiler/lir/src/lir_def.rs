@@ -26,7 +26,20 @@ pub enum Instruction {
         src: Operand,
         dest: Operand,
     },
+    Cmp(Operand, Operand),
     Idiv(Operand),
+    Jmp {
+        label: String,
+    },
+    JmpCond {
+        condition: Condition,
+        label: String,
+    },
+    SetCond {
+        condition: Condition,
+        dest: Operand,
+    },
+    Label(String),
     Cdq,
     AllocateStack(i32),
     Ret,
@@ -65,4 +78,14 @@ pub enum Register {
     DX,
     R10,
     R11,
+}
+
+#[derive(Debug, Clone)]
+pub enum Condition {
+    E,
+    NE,
+    G,
+    GE,
+    L,
+    LE,
 }

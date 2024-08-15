@@ -217,7 +217,7 @@ fn compile(path: &str, stop_stage: &Option<StopStage>, assm_path: &str) -> Resul
 
     let assm_ast = gen_assm(&tacky);
 
-    println!("ASSM:\n{:#?}", assm_ast);
+    // println!("ASSM:\n{:#?}", assm_ast);
 
     if let Some(StopStage::CodeGen) = stop_stage {
         return Ok(());

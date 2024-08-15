@@ -57,6 +57,22 @@ fn emit_instruction<W: Write>(writer: &mut W, instruction: Instruction) -> std::
         }
         Instruction::Cdq => {
             writeln!(writer, "\tcdq")?;
+        },
+
+        Instruction::Cmp(first, second) => {
+            writeln!(writer, "\tcmpl {}, {}", show_operand(first), show_operand(second))?;
+        }
+        Instruction::Jmp { label } => {
+            writeln!(writer, "\tjmp .L{}", label)?;
+        }
+        Instruction::JmpCond { condition, label } => {
+            writeln!(writer, "\tj{} .L{}", show_condition(condition), label)?;
+        }
+        Instruction::SetCond { condition, dest } => {
+            writeln!(writer, "\tset{} {}", show_condition(condition), show_byte_operand(dest))?;
+        }
+        Instruction::Label(label) => {
+            writeln!(writer, ".L{}:", label)?;
         }
     }
 
@@ -83,6 +99,16 @@ fn show_binary(op: BinaryOp) -> String {
     }
 }
 
+fn show_byte_operand(op: Operand) -> String {
+    match op {
+        Operand::Register(Register::AX) => format!("%{}","al"),
+        Operand::Register(Register::DX) => format!("%{}","dl"),
+        Operand::Register(Register::R10) => format!("%{}","r10b"),
+        Operand::Register(Register::R11) => format!("%{}","r11b"),
+        _ => show_operand(op)
+    }
+}
+
 fn show_operand(op: Operand) -> String {
     match op {
         Operand::Register(reg) => format!("%{}", match reg {
@@ -95,6 +121,17 @@ fn show_operand(op: Operand) -> String {
         Operand::Stack(amt) => format!("{}(%rbp)", -amt),
         Operand::Imm(val) => format!("${}", val),
         Operand::Pseudo(_) => panic!("No Pseudo-registers should be in tree when outputing assembly"),
+    }
+}
+
+fn show_condition(cond: Condition) -> String {
+    match cond {
+        Condition::E => "e".to_string(),
+        Condition::NE => "ne".to_string(),
+        Condition::G => "g".to_string(),
+        Condition::GE => "ge".to_string(),
+        Condition::L => "l".to_string(),
+        Condition::LE => "le".to_string(),
     }
 }
 

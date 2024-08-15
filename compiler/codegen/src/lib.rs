@@ -8,6 +8,15 @@ use crate::replace_pseudoregisters::PseudoReplacer;
 mod fix_instructions;
 mod replace_pseudoregisters;
 
+macro_rules! tb {
+    ($variant:ident) => {
+        tacky::BinaryOp::$variant
+    };
+    ($head:ident | $($tail:ident)|+) => {
+        tb!($head) | tb!($($tail)|+)
+    };
+}
+
 pub fn gen_assm(tacky: &tacky::TranslationUnit) -> Program {
     match &tacky {
         &tacky::TranslationUnit { func } => {
@@ -40,6 +49,21 @@ fn gen_instructions(instructions: &Vec<tacky::Instruction>) -> Vec<Instruction> 
                     dest: Operand::Register(Register::AX),
                 });
                 assm_instr.push(Instruction::Ret);
+            }
+            tacky::Instruction::Unary {
+                op: tacky::UnaryOp::Not,
+                src,
+                dest,
+            } => {
+                assm_instr.push(Instruction::Cmp(Operand::Imm(0), gen_operand(src)));
+                assm_instr.push(Instruction::Mov {
+                    src: Operand::Imm(0),
+                    dest: gen_operand(dest),
+                });
+                assm_instr.push(Instruction::SetCond {
+                    condition: Condition::E,
+                    dest: gen_operand(dest),
+                });
             }
             tacky::Instruction::Unary { op, src, dest } => {
                 assm_instr.push(Instruction::Mov {
@@ -104,6 +128,19 @@ fn gen_instructions(instructions: &Vec<tacky::Instruction>) -> Vec<Instruction> 
                             });
                         }
                     }
+                } else if matches!(
+                    op,
+                    tb!(Equal | NotEqual | Less | LessEqual | Greater | GreaterEqual)
+                ) {
+                    assm_instr.push(Instruction::Cmp(gen_operand(second), gen_operand(first)));
+                    assm_instr.push(Instruction::Mov {
+                        src: Operand::Imm(0),
+                        dest: gen_operand(dest),
+                    });
+                    assm_instr.push(Instruction::SetCond {
+                        condition: gen_cond(op),
+                        dest: gen_operand(dest),
+                    });
                 } else {
                     assm_instr.push(Instruction::Mov {
                         src: gen_operand(first),
@@ -116,7 +153,30 @@ fn gen_instructions(instructions: &Vec<tacky::Instruction>) -> Vec<Instruction> 
                     })
                 }
             }
-            _ => todo!()
+            tacky::Instruction::Copy { src, dest } => assm_instr.push(Instruction::Mov {
+                src: gen_operand(src),
+                dest: gen_operand(dest),
+            }),
+            tacky::Instruction::Jump { target } => assm_instr.push(Instruction::Jmp {
+                label: target.clone(),
+            }),
+            tacky::Instruction::JumpIfZero { condition, target } => {
+                assm_instr.push(Instruction::Cmp(Operand::Imm(0), gen_operand(condition)));
+                assm_instr.push(Instruction::JmpCond {
+                    condition: Condition::E,
+                    label: target.clone(),
+                });
+            }
+            tacky::Instruction::JumpIfNotZero { condition, target } => {
+                assm_instr.push(Instruction::Cmp(Operand::Imm(0), gen_operand(condition)));
+                assm_instr.push(Instruction::JmpCond {
+                    condition: Condition::NE,
+                    label: target.clone(),
+                });
+            }
+            tacky::Instruction::Label(identifier) => {
+                assm_instr.push(Instruction::Label(identifier.clone()))
+            }
         }
     }
 
@@ -127,7 +187,10 @@ fn gen_unary(operator: &tacky::UnaryOp) -> UnaryOp {
     match operator {
         tacky::UnaryOp::Complement => UnaryOp::Not,
         tacky::UnaryOp::Negate => UnaryOp::Neg,
-        _ => todo!()
+        // should never get here
+        tacky::UnaryOp::Not => {
+            panic!("Unable to directly convert TACKY 'Not' directly to assembly")
+        }
     }
 }
 
@@ -141,7 +204,7 @@ fn gen_binary(operator: &tacky::BinaryOp) -> BinaryOp {
         tacky::BinaryOp::BitwiseXor => BinaryOp::Xor,
         tacky::BinaryOp::BitshiftLeft => BinaryOp::Sal,
         tacky::BinaryOp::BitshiftRight => BinaryOp::Sar,
-         _ => panic!("Unable to convert {:#?} into assembly BinaryOp", operator),
+        _ => panic!("Unable to convert {:#?} into assembly BinaryOp", operator),
     }
 }
 
@@ -149,5 +212,17 @@ fn gen_operand(operand: &tacky::Val) -> Operand {
     match operand {
         tacky::Val::Constant(val) => Operand::Imm(*val),
         tacky::Val::Var(var) => Operand::Pseudo(var.clone()),
+    }
+}
+
+fn gen_cond(op: &tacky::BinaryOp) -> Condition {
+    match op {
+        tacky::BinaryOp::Equal => Condition::E,
+        tacky::BinaryOp::NotEqual => Condition::NE,
+        tacky::BinaryOp::Less => Condition::L,
+        tacky::BinaryOp::LessEqual => Condition::LE,
+        tacky::BinaryOp::Greater => Condition::G,
+        tacky::BinaryOp::GreaterEqual => Condition::GE,
+        _ => panic!("Internal Error: Not a condition operator: {:?}", op),
     }
 }
