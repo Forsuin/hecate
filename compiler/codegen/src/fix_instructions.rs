@@ -34,7 +34,10 @@ fn fix_instructions(instructions: &Vec<Instruction>) -> Vec<Instruction> {
                 });
             }
             Instruction::Binary { op, src, dest } => {
-                if matches!(op, BinaryOp::Add | BinaryOp::Sub | BinaryOp::And | BinaryOp::Or | BinaryOp::Xor) {
+                if matches!(
+                    op,
+                    BinaryOp::Add | BinaryOp::Sub | BinaryOp::And | BinaryOp::Or | BinaryOp::Xor
+                ) {
                     fixed_instr.push(Instruction::Mov {
                         src: src.clone(),
                         dest: Operand::Register(Register::R10),
@@ -66,6 +69,26 @@ fn fix_instructions(instructions: &Vec<Instruction>) -> Vec<Instruction> {
                     dest: Operand::Register(Register::R10),
                 });
                 fixed_instr.push(Instruction::Idiv(Operand::Register(Register::R10)));
+            }
+            Instruction::Cmp(Operand::Stack(first), Operand::Stack(second)) => {
+                fixed_instr.push(Instruction::Mov {
+                    src: Operand::Stack(*first),
+                    dest: Operand::Register(Register::R10),
+                });
+                fixed_instr.push(Instruction::Cmp(
+                    Operand::Register(Register::R10),
+                    Operand::Stack(*second),
+                ));
+            }
+            Instruction::Cmp(first, Operand::Imm(val)) => {
+                fixed_instr.push(Instruction::Mov {
+                    src: Operand::Imm(*val),
+                    dest: Operand::Register(Register::R11),
+                });
+                fixed_instr.push(Instruction::Cmp(
+                    first.clone(),
+                    Operand::Register(Register::R11),
+                ));
             }
             _ => fixed_instr.push(i.clone()),
         }

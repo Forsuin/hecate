@@ -209,7 +209,7 @@ fn compile(path: &str, stop_stage: &Option<StopStage>, assm_path: &str) -> Resul
 
     let tacky = gen_tacky(ast);
 
-    // println!("TACKY:\n{:#?}", tacky);
+    println!("TACKY:\n{:#?}", tacky);
 
     if let Some(StopStage::Tacky) = stop_stage {
         return Ok(())

@@ -64,6 +64,26 @@ impl PseudoReplacer {
                 Instruction::Idiv(op)
             }
             Instruction::Cdq => Instruction::Cdq,
+            Instruction::Cmp(first, second) => {
+                let first = self.replace_operand(first);
+                let second = self.replace_operand(second);
+                Instruction::Cmp(first, second)
+            }
+            Instruction::Jmp { label } => Instruction::Jmp {
+                label: label.clone(),
+            },
+            Instruction::JmpCond { condition, label } => Instruction::JmpCond {
+                condition: condition.clone(),
+                label: label.clone(),
+            },
+            Instruction::SetCond { condition, dest } => {
+                let dest = self.replace_operand(dest);
+                Instruction::SetCond {
+                    condition: condition.clone(),
+                    dest,
+                }
+            }
+            Instruction::Label(ident) => {Instruction::Label(ident.clone())}
         }
     }
 
