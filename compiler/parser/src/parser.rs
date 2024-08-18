@@ -4,6 +4,7 @@ use std::iter::Peekable;
 use thiserror::Error;
 
 use ast::*;
+use ast::Expr::Assignment;
 use lexer::*;
 
 #[derive(Error, Clone, Debug)]
@@ -49,11 +50,68 @@ impl Parser {
         self.expect(TokenType::CloseParen)?;
         self.expect(TokenType::OpenBrace)?;
 
-        let body = self.parse_stmt()?;
+        let mut body = vec![];
+
+        while self
+            .tokens
+            .peek()
+            .is_some_and(|t| t.kind != TokenType::CloseBrace)
+        {
+            let next_block = self.parse_block_item()?;
+            body.push(next_block);
+        }
 
         self.expect(TokenType::CloseBrace)?;
 
         Ok(Func { ident: name, body })
+    }
+
+    fn parse_block_item(&mut self) -> Result<BlockItem, ParseError> {
+        match self.tokens.peek() {
+            Some(Token {
+                kind: TokenType::Int,
+                ..
+            }) => {
+                Ok(BlockItem::D(self.parse_decl()?))
+            },
+            Some(_) => {
+                Ok(BlockItem::S(self.parse_stmt()?))
+            }
+            None => Err(ParseError::new(
+                "Expected function body, but found end of file instead".to_string(),
+            )),
+        }
+    }
+
+    fn parse_decl(&mut self) -> Result<Decl, ParseError> {
+        self.expect(TokenType::Int)?;
+
+        let ident = self.parse_ident()?;
+
+        let init;
+
+        match self.tokens.peek() {
+            Some(Token {kind: TokenType::Equal, ..}) => {
+                self.expect(TokenType::Equal)?;
+                init = Some(self.parse_expr(0)?);
+                self.expect(TokenType::Semicolon)?;
+            },
+            Some(Token {kind: TokenType::Semicolon, ..}) => {
+                self.expect(TokenType::Semicolon)?;
+                init = None;
+            },
+            Some(t) => {
+                return Err(ParseError::new(format!("Expected assignment or semicolon, found '{:?}' instead", t)));
+            }
+            None => return Err(ParseError::new("Expected assignment or semicolon, found end of file".to_string())),
+        }
+
+
+
+        Ok(Decl {
+            name: ident,
+            init,
+        })
     }
 
     fn parse_ident(&mut self) -> Result<String, ParseError> {
@@ -74,27 +132,58 @@ impl Parser {
     }
 
     fn parse_stmt(&mut self) -> Result<Stmt, ParseError> {
-        self.expect(TokenType::Return)?;
+       match self.peek() {
+           Some(Token {
+               kind: TokenType::Return,
+               ..
+                }) => {
+               self.expect(TokenType::Return)?;
 
-        let expr = self.parse_expr(0)?;
+               let expr = self.parse_expr(0)?;
 
-        self.expect(TokenType::Semicolon)?;
+               self.expect(TokenType::Semicolon)?;
 
-        Ok(Stmt::Return { expr })
+               Ok(Stmt::Return { expr })
+           },
+           Some(Token {
+               kind: TokenType::Semicolon,
+               ..
+                }) => {
+               self.expect(TokenType::Semicolon)?;
+               Ok(Stmt::Null)
+           },
+           _ => {
+               let expr = Stmt::Expression {expr: self.parse_expr(0)?};
+               self.expect(TokenType::Semicolon)?;
+               Ok(expr)
+           }
+       }
+
+
     }
 
     fn parse_expr(&mut self, min_prec: i32) -> Result<Expr, ParseError> {
         let mut left = self.parse_factor()?;
 
-        while let Some(next) = self.tokens.peek() {
+        while let Some(next) = self.peek() {
             if let Some(prec) = get_precedence(next.kind) {
                 if prec >= min_prec {
-                    let operator = self.parse_binop()?;
-                    let right = self.parse_expr(prec + 1)?;
-                    left = Expr::Binary {
-                        op: operator,
-                        left: Box::new(left),
-                        right: Box::new(right),
+                    if next.kind == TokenType::Equal {
+                        self.expect(TokenType::Equal)?;
+                        let right = self.parse_expr(get_precedence(next.kind).unwrap())?;
+                        left = Assignment {
+                            lvalue: Box::from(left),
+                            expr: Box::from(right),
+                        }
+                    }
+                    else {
+                        let operator = self.parse_binop()?;
+                        let right = self.parse_expr(prec + 1)?;
+                        left = Expr::Binary {
+                            op: operator,
+                            left: Box::new(left),
+                            right: Box::new(right),
+                        }
                     }
                 } else {
                     break;
@@ -127,6 +216,15 @@ impl Parser {
                 let val = val.clone();
                 self.tokens.next();
                 Ok(Expr::Constant(val))
+            },
+            Some(Token {
+                kind: TokenType::Identifier,
+                value: TokenValue::Ident(var),
+                ..
+                 }) => {
+                let var = var.clone();
+                self.tokens.next();
+                Ok(Expr::Var(var))
             }
             Some(_) => {
                 let unop = self.parse_unop()?;
@@ -263,7 +361,7 @@ impl Parser {
                 "Expected {:?}, but found {:?}",
                 expected, t
             ))),
-            None => Err(ParseError::new(format!("Unexpected end of file"))),
+            None => Err(ParseError::new("Unexpected end of file".to_string())),
         }
     }
 
@@ -275,6 +373,10 @@ impl Parser {
             ))),
             None => Ok(()),
         }
+    }
+
+    fn peek(&mut self) -> Option<Token> {
+        self.tokens.peek().cloned()
     }
 }
 
@@ -292,6 +394,7 @@ fn get_precedence(token: TokenType) -> Option<i32> {
         TokenType::Pipe => Some(15),
         TokenType::AmpAmp => Some(10),
         TokenType::PipePipe => Some(5),
+        TokenType::Equal => Some(1),
         _ => None,
     }
 }

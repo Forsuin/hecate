@@ -8,19 +8,45 @@ pub struct TranslationUnit {
 #[derive(Debug, Eq, PartialEq)]
 pub struct Func {
     pub ident: String,
-    pub body: Stmt,
+    pub body: Vec<BlockItem>
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub enum BlockItem {
+    S(Stmt),
+    D(Decl),
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct Decl {
+    pub name: String,
+    pub init: Option<Expr>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum Stmt {
     Return { expr: Expr },
+    Expression { expr: Expr },
+    Null,
 }
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum Expr {
     Constant(i32),
-    Unary { op: UnaryOp, expr: Box<Expr> },
-    Binary { op: BinaryOp, left: Box<Expr>, right: Box<Expr> },
+    Var(String),
+    Unary {
+        op: UnaryOp,
+        expr: Box<Expr>,
+    },
+    Binary {
+        op: BinaryOp,
+        left: Box<Expr>,
+        right: Box<Expr>,
+    },
+    Assignment {
+        lvalue: Box<Expr>,
+        expr: Box<Expr>,
+    },
 }
 
 #[derive(Debug, Eq, PartialEq)]
