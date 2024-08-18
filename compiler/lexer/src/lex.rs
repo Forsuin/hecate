@@ -271,7 +271,7 @@ impl<'a> Lexer<'a> {
     }
 
     fn identifier(&mut self, start: usize) -> TokenType {
-        while self.peek().is_alphanumeric() {
+        while self.peek().is_alphanumeric() || self.peek() == '_' {
             self.advance();
         }
 
