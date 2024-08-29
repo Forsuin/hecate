@@ -144,6 +144,7 @@ dependencies = [
  "lir",
  "mir",
  "parser",
+ "semantic_analysis",
  "thiserror",
 ]
 
@@ -178,6 +179,7 @@ name = "mir"
 version = "0.1.0"
 dependencies = [
  "ast",
+ "unique_ident",
 ]
 
 [[package]]
@@ -205,6 +207,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0fa76aaf39101c457836aec0ce2316dbdc3ab723cdda1c6bd4e6ad4208acaca7"
 dependencies = [
  "proc-macro2",
+]
+
+[[package]]
+name = "semantic_analysis"
+version = "0.1.0"
+dependencies = [
+ "ast",
+ "unique_ident",
 ]
 
 [[package]]
@@ -249,6 +259,10 @@ name = "unicode-ident"
 version = "1.0.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3354b9ac3fae1ff6755cb6db53683adb661634f67557942dea4facebec0fee4b"
+
+[[package]]
+name = "unique_ident"
+version = "0.1.0"
 
 [[package]]
 name = "utf8parse"

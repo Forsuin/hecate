@@ -4,11 +4,13 @@ use std::io::Write;
 use anyhow::{Ok, Result};
 use clap::{Args, Parser as ClapParser};
 use thiserror::Error;
+
 use codegen::gen_assm;
 use emission::output;
 use lexer::{Lexer, TokenType};
 use mir::gen_tacky;
 use parser::Parser;
+use semantic_analysis::resolve;
 
 #[derive(ClapParser, Debug)]
 #[command(version, about, long_about = "Runs the Hecate C compiler")]
@@ -40,6 +42,9 @@ struct StageOptions {
     #[arg(long)]
     tacky: bool,
 
+    #[arg(long)]
+    validate: bool,
+
     /// Emit assemly file, but do not assemble or link it
     #[arg(short = 'S')]
     s: bool,
@@ -52,6 +57,7 @@ enum StopStage {
     CodeGen,
     Assembler,
     Tacky,
+    Analysis,
 }
 
 impl StopStage {
@@ -66,7 +72,11 @@ impl StopStage {
             return Some(StopStage::Assembler);
         } else if options.tacky {
             return Some(StopStage::Tacky);
-        } else {
+        }
+        else if options.validate {
+            return Some(StopStage::Analysis)
+        }
+        else {
             return None;
         }
     }
@@ -206,13 +216,18 @@ fn compile(path: &str, stop_stage: &Option<StopStage>, assm_path: &str) -> Resul
         return Ok(());
     }
 
+    let resolved_ast = resolve(&ast);
 
-    let tacky = gen_tacky(ast);
+    if let Some(StopStage::Analysis) = stop_stage {
+        return Ok(());
+    }
+
+    let tacky = gen_tacky(resolved_ast);
 
     // println!("TACKY:\n{:#?}", tacky);
 
     if let Some(StopStage::Tacky) = stop_stage {
-        return Ok(())
+        return Ok(());
     }
 
     let assm_ast = gen_assm(&tacky);

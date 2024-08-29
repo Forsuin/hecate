@@ -7,9 +7,13 @@ edition = "2021"
 anyhow = "1.0.86"
 clap = { version = "4.5.7", features = ["derive"] }
 thiserror = "1.0.61"
-hecate_driver = { path = "compiler/hecate_driver"}
+hecate_driver = { path = "compiler/hecate_driver" }
 
 [workspace]
 members = [
     "compiler/hecate_driver"
 ]
+
+[profile.profiling]
+inherits = "release"
+debug = true

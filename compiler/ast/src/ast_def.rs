@@ -30,7 +30,7 @@ pub enum Stmt {
     Null,
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub enum Expr {
     Constant(i32),
     Var(String),
@@ -49,14 +49,14 @@ pub enum Expr {
     },
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub enum UnaryOp {
     Complement,
     Negate,
     Not,
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub enum BinaryOp {
     Add,
     Subtract,

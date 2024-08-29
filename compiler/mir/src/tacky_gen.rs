@@ -1,6 +1,8 @@
-use ast::BinaryOp;
+use ast::{BinaryOp, BlockItem, Expr};
+use unique_ident::*;
 
 use crate::tacky;
+use crate::tacky::{Instruction, Val};
 
 pub fn gen_tacky(ast: ast::TranslationUnit) -> tacky::TranslationUnit {
     match ast {
@@ -11,20 +13,53 @@ pub fn gen_tacky(ast: ast::TranslationUnit) -> tacky::TranslationUnit {
 }
 
 fn tacky_func(func: ast::Func) -> tacky::Func {
+    let mut instructions = vec![];
+
+    for block_item in func.body {
+        match block_item {
+            BlockItem::S(stmt) => {
+                for instruction in tacky_stmt(stmt) {
+                    instructions.push(instruction);
+                }
+            }
+            BlockItem::D(decl) => match decl.init {
+                Some(init) => {
+                    let (expr_instr, _) = tacky_expr(Expr::Assignment {
+                        lvalue: Box::new(Expr::Var(decl.name)),
+                        expr: Box::new(init),
+                    });
+                    for instruction in expr_instr {
+                        instructions.push(instruction);
+                    }
+                }
+                None => {}
+            },
+        }
+    }
+
+    instructions.push(Instruction::Return(Val::Constant(0)));
+
     tacky::Func {
         name: func.ident,
-        instructions: tacky_stmt(func.body),
+        instructions,
     }
 }
 
 fn tacky_stmt(stmt: ast::Stmt) -> Vec<tacky::Instruction> {
     match stmt {
         ast::Stmt::Return { expr } => {
-            let (mut instrutions, value) = tacky_expr(expr);
+            let (mut instructions, value) = tacky_expr(expr);
 
-            instrutions.push(tacky::Instruction::Return(value));
+            instructions.push(tacky::Instruction::Return(value));
 
-            instrutions
+            instructions
+        }
+        ast::Stmt::Expression { expr } => {
+            let (instructions, _) = tacky_expr(expr);
+            instructions
+        }
+        ast::Stmt::Null => {
+            vec![]
         }
     }
 }
@@ -34,7 +69,7 @@ fn tacky_expr(expr: ast::Expr) -> (Vec<tacky::Instruction>, tacky::Val) {
         ast::Expr::Constant(val) => (vec![], tacky::Val::Constant(val)),
         ast::Expr::Unary { op, expr } => {
             let (instructions, inner) = tacky_expr(*expr);
-            let dest_name = make_temp_var();
+            let dest_name = make_temp();
             let dest = tacky::Val::Var(dest_name);
             let op = tacky_unop(op);
 
@@ -134,7 +169,7 @@ fn tacky_expr(expr: ast::Expr) -> (Vec<tacky::Instruction>, tacky::Val) {
         ast::Expr::Binary { op, left, right } => {
             let (left_instr, left_inner) = tacky_expr(*left);
             let (mut right_instr, right_inner) = tacky_expr(*right);
-            let dest_name = make_temp_var();
+            let dest_name = make_temp();
             let dest = tacky::Val::Var(dest_name);
             let op = tacky_binop(op);
 
@@ -148,6 +183,24 @@ fn tacky_expr(expr: ast::Expr) -> (Vec<tacky::Instruction>, tacky::Val) {
             });
 
             (instructions, dest)
+        }
+
+        Expr::Var(v) => (vec![], tacky::Val::Var(v)),
+        Expr::Assignment { lvalue, expr } => {
+
+            let v = match *lvalue {
+                Expr::Var(v) => v,
+                _ => unreachable!("Assignment lvalue should always be a Var"),
+            };
+
+            let (mut instructions, result) = tacky_expr(*expr);
+
+            instructions.push(tacky::Instruction::Copy {
+                src: result,
+                dest: tacky::Val::Var(v.clone()),
+            });
+
+            (instructions, tacky::Val::Var(v))
         }
     }
 }
@@ -186,32 +239,5 @@ fn tacky_binop(op: ast::BinaryOp) -> tacky::BinaryOp {
         BinaryOp::And | BinaryOp::Or => {
             panic!("Internal error, cannot convert {:?} directly to TACKY", op)
         }
-    }
-}
-
-static mut VAR_COUNTER: i32 = 0;
-static mut LABEL_COUNTER: i32 = 0;
-
-fn make_temp_var() -> String {
-    unsafe {
-        let string = format!("tmp.{}", VAR_COUNTER);
-        VAR_COUNTER += 1;
-        string
-    }
-}
-
-fn make_temp() -> String {
-    unsafe {
-        let string = format!("tmp.{}", LABEL_COUNTER);
-        LABEL_COUNTER += 1;
-        string
-    }
-}
-
-fn make_label(prefix: &str) -> String {
-    unsafe {
-        let string = format!("{}.{}", prefix, LABEL_COUNTER);
-        LABEL_COUNTER += 1;
-        string
     }
 }

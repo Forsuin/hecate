@@ -13,4 +13,4 @@ mir = { path = "../mir" }
 lir = { path = "../lir" }
 codegen = { path = "../codegen" }
 emission = { path = "../emission" }
-
+semantic_analysis = { path = "../semantic_analysis" }
