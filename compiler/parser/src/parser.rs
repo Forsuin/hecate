@@ -4,7 +4,7 @@ use std::iter::Peekable;
 use thiserror::Error;
 
 use ast::*;
-use ast::Expr::Assignment;
+use ast::Expr::{Assignment, CompoundAssignment};
 use lexer::*;
 
 #[derive(Error, Clone, Debug)]
@@ -22,6 +22,14 @@ impl ParseError {
     fn new(message: String) -> Self {
         Self { message }
     }
+}
+
+macro_rules! match_token_types {
+    ($( $token:pat ),+ ) => {
+        $(
+        Some(Token{ kind: $token, ..})
+        )|+
+    };
 }
 
 pub struct Parser {
@@ -71,12 +79,8 @@ impl Parser {
             Some(Token {
                 kind: TokenType::Int,
                 ..
-            }) => {
-                Ok(BlockItem::D(self.parse_decl()?))
-            },
-            Some(_) => {
-                Ok(BlockItem::S(self.parse_stmt()?))
-            }
+            }) => Ok(BlockItem::D(self.parse_decl()?)),
+            Some(_) => Ok(BlockItem::S(self.parse_stmt()?)),
             None => Err(ParseError::new(
                 "Expected function body, but found end of file instead".to_string(),
             )),
@@ -91,27 +95,35 @@ impl Parser {
         let init;
 
         match self.tokens.peek() {
-            Some(Token {kind: TokenType::Equal, ..}) => {
+            Some(Token {
+                kind: TokenType::Equal,
+                ..
+            }) => {
                 self.expect(TokenType::Equal)?;
                 init = Some(self.parse_expr(0)?);
                 self.expect(TokenType::Semicolon)?;
-            },
-            Some(Token {kind: TokenType::Semicolon, ..}) => {
+            }
+            Some(Token {
+                kind: TokenType::Semicolon,
+                ..
+            }) => {
                 self.expect(TokenType::Semicolon)?;
                 init = None;
-            },
-            Some(t) => {
-                return Err(ParseError::new(format!("Expected assignment or semicolon, found '{:?}' instead", t)));
             }
-            None => return Err(ParseError::new("Expected assignment or semicolon, found end of file".to_string())),
+            Some(t) => {
+                return Err(ParseError::new(format!(
+                    "Expected assignment or semicolon, found '{:?}' instead",
+                    t
+                )));
+            }
+            None => {
+                return Err(ParseError::new(
+                    "Expected assignment or semicolon, found end of file".to_string(),
+                ))
+            }
         }
 
-
-
-        Ok(Decl {
-            name: ident,
-            init,
-        })
+        Ok(Decl { name: ident, init })
     }
 
     fn parse_ident(&mut self) -> Result<String, ParseError> {
@@ -132,34 +144,34 @@ impl Parser {
     }
 
     fn parse_stmt(&mut self) -> Result<Stmt, ParseError> {
-       match self.peek() {
-           Some(Token {
-               kind: TokenType::Return,
-               ..
-                }) => {
-               self.expect(TokenType::Return)?;
+        match self.peek() {
+            Some(Token {
+                kind: TokenType::Return,
+                ..
+            }) => {
+                self.expect(TokenType::Return)?;
 
-               let expr = self.parse_expr(0)?;
+                let expr = self.parse_expr(0)?;
 
-               self.expect(TokenType::Semicolon)?;
+                self.expect(TokenType::Semicolon)?;
 
-               Ok(Stmt::Return { expr })
-           },
-           Some(Token {
-               kind: TokenType::Semicolon,
-               ..
-                }) => {
-               self.expect(TokenType::Semicolon)?;
-               Ok(Stmt::Null)
-           },
-           _ => {
-               let expr = Stmt::Expression {expr: self.parse_expr(0)?};
-               self.expect(TokenType::Semicolon)?;
-               Ok(expr)
-           }
-       }
-
-
+                Ok(Stmt::Return { expr })
+            }
+            Some(Token {
+                kind: TokenType::Semicolon,
+                ..
+            }) => {
+                self.expect(TokenType::Semicolon)?;
+                Ok(Stmt::Null)
+            }
+            _ => {
+                let expr = Stmt::Expression {
+                    expr: self.parse_expr(0)?,
+                };
+                self.expect(TokenType::Semicolon)?;
+                Ok(expr)
+            }
+        }
     }
 
     fn parse_expr(&mut self, min_prec: i32) -> Result<Expr, ParseError> {
@@ -168,15 +180,21 @@ impl Parser {
         while let Some(next) = self.peek() {
             if let Some(prec) = get_precedence(next.kind) {
                 if prec >= min_prec {
-                    if next.kind == TokenType::Equal {
-                        self.expect(TokenType::Equal)?;
+                    if is_assignment(next.kind) {
+                        self.tokens.next();
                         let right = self.parse_expr(get_precedence(next.kind).unwrap())?;
-                        left = Assignment {
-                            lvalue: Box::from(left),
-                            expr: Box::from(right),
+                        left = match get_compound(next.kind) {
+                            None => Assignment {
+                                lvalue: Box::from(left),
+                                expr: Box::from(right),
+                            },
+                            Some(op) => CompoundAssignment {
+                                op,
+                                lvalue: Box::from(left),
+                                expr: Box::from(right),
+                            },
                         }
-                    }
-                    else {
+                    } else {
                         let operator = self.parse_binop()?;
                         let right = self.parse_expr(prec + 1)?;
                         left = Expr::Binary {
@@ -198,6 +216,57 @@ impl Parser {
 
     fn parse_factor(&mut self) -> Result<Expr, ParseError> {
         match self.tokens.peek() {
+            match_token_types!(
+                TokenType::Minus,
+                TokenType::Tilde,
+                TokenType::Bang,
+                TokenType::MinusMinus,
+                TokenType::PlusPlus
+            ) => {
+                let unop = self.parse_unop()?;
+                let expr = self.parse_factor()?;
+
+                Ok(Expr::Unary {
+                    op: unop,
+                    expr: Box::new(expr),
+                })
+            }
+            Some(_) => self.parse_postfix_expr(),
+            None => Err(ParseError::new(
+                "Expected an expression, but found end of file instead".to_string(),
+            )),
+        }
+    }
+
+    fn parse_postfix_expr(&mut self) -> Result<Expr, ParseError> {
+        let primary = self.parse_primary_expr()?;
+        self.postfix_helper(primary)
+    }
+
+    fn postfix_helper(&mut self, expr: Expr) -> Result<Expr, ParseError> {
+        match self.tokens.peek() {
+            Some(Token {
+                kind: TokenType::MinusMinus,
+                ..
+            }) => {
+                self.tokens.next();
+                let dec_expr = Expr::PostfixDec(Box::from(expr));
+                self.postfix_helper(dec_expr)
+            }
+            Some(Token {
+                kind: TokenType::PlusPlus,
+                ..
+            }) => {
+                self.tokens.next();
+                let dec_expr = Expr::PostfixInc(Box::from(expr));
+                self.postfix_helper(dec_expr)
+            }
+            _ => Ok(expr),
+        }
+    }
+
+    fn parse_primary_expr(&mut self) -> Result<Expr, ParseError> {
+        match self.tokens.peek() {
             Some(Token {
                 kind: TokenType::OpenParen,
                 ..
@@ -216,28 +285,20 @@ impl Parser {
                 let val = val.clone();
                 self.tokens.next();
                 Ok(Expr::Constant(val))
-            },
+            }
             Some(Token {
                 kind: TokenType::Identifier,
                 value: TokenValue::Ident(var),
                 ..
-                 }) => {
+            }) => {
                 let var = var.clone();
                 self.tokens.next();
                 Ok(Expr::Var(var))
             }
-            Some(_) => {
-                let unop = self.parse_unop()?;
-                let expr = self.parse_factor()?;
-
-                Ok(Expr::Unary {
-                    op: unop,
-                    expr: Box::new(expr),
-                })
-            }
-            None => Err(ParseError::new(
-                "Expected an expression, but found end of file instead".to_string(),
-            )),
+            t => Err(ParseError::new(format!(
+                "Expected a factor, found '{:?}'",
+                t
+            ))),
         }
     }
 
@@ -258,7 +319,11 @@ impl Parser {
             Some(Token {
                 kind: TokenType::MinusMinus,
                 ..
-            }) => Err(ParseError::new(format!("Invalid operator '--'"))),
+            }) => Ok(UnaryOp::Dec),
+            Some(Token {
+                kind: TokenType::PlusPlus,
+                ..
+            }) => Ok(UnaryOp::Inc),
             Some(t) => Err(ParseError::new(format!(
                 "Expected unary operator, found '{:?}'",
                 t
@@ -394,8 +459,54 @@ fn get_precedence(token: TokenType) -> Option<i32> {
         TokenType::Pipe => Some(15),
         TokenType::AmpAmp => Some(10),
         TokenType::PipePipe => Some(5),
-        TokenType::Equal => Some(1),
+        TokenType::Equal
+        | TokenType::PlusEqual
+        | TokenType::MinusEqual
+        | TokenType::StarEqual
+        | TokenType::SlashEqual
+        | TokenType::PercentEqual
+        | TokenType::AmpEqual
+        | TokenType::XorEqual
+        | TokenType::PipeEqual
+        | TokenType::LessLessEqual
+        | TokenType::GreaterGreaterEqual => Some(1),
         _ => None,
+    }
+}
+
+fn is_assignment(token_type: TokenType) -> bool {
+    matches!(
+        token_type,
+        TokenType::Equal
+            | TokenType::PlusEqual
+            | TokenType::MinusEqual
+            | TokenType::StarEqual
+            | TokenType::SlashEqual
+            | TokenType::PercentEqual
+            | TokenType::AmpEqual
+            | TokenType::XorEqual
+            | TokenType::PipeEqual
+            | TokenType::LessLessEqual
+            | TokenType::GreaterGreaterEqual
+    )
+}
+
+fn get_compound(token_type: TokenType) -> Option<BinaryOp> {
+    match token_type {
+        TokenType::Equal => None,
+
+        TokenType::PlusEqual => Some(BinaryOp::Add),
+        TokenType::MinusEqual => Some(BinaryOp::Subtract),
+        TokenType::SlashEqual => Some(BinaryOp::Divide),
+        TokenType::StarEqual => Some(BinaryOp::Multiply),
+        TokenType::PercentEqual => Some(BinaryOp::Modulo),
+        TokenType::AmpEqual => Some(BinaryOp::BitwiseAnd),
+        TokenType::PipeEqual => Some(BinaryOp::BitwiseOr),
+        TokenType::XorEqual => Some(BinaryOp::BitwiseXor),
+        TokenType::LessLessEqual => Some(BinaryOp::BitshiftLeft),
+        TokenType::GreaterGreaterEqual => Some(BinaryOp::BitshiftRight),
+
+        _ => unreachable!("Not an assignment operator: '{:?}'", token_type),
     }
 }
 

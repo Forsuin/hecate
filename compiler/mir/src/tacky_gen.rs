@@ -1,4 +1,4 @@
-use ast::{BinaryOp, BlockItem, Expr};
+use ast::{BinaryOp, BlockItem, Expr, UnaryOp};
 use unique_ident::*;
 
 use crate::tacky;
@@ -67,6 +67,12 @@ fn tacky_stmt(stmt: ast::Stmt) -> Vec<tacky::Instruction> {
 fn tacky_expr(expr: ast::Expr) -> (Vec<tacky::Instruction>, tacky::Val) {
     match expr {
         ast::Expr::Constant(val) => (vec![], tacky::Val::Constant(val)),
+        Expr::Unary { op: UnaryOp::Inc, expr } => {
+            tacky_compound_expression(BinaryOp::Add, *expr, Expr::Constant(1))
+        }
+        Expr::Unary { op: UnaryOp::Dec, expr } => {
+            tacky_compound_expression(BinaryOp::Subtract, *expr, Expr::Constant(1))
+        }
         ast::Expr::Unary { op, expr } => {
             let (instructions, inner) = tacky_expr(*expr);
             let dest_name = make_temp();
@@ -187,7 +193,6 @@ fn tacky_expr(expr: ast::Expr) -> (Vec<tacky::Instruction>, tacky::Val) {
 
         Expr::Var(v) => (vec![], tacky::Val::Var(v)),
         Expr::Assignment { lvalue, expr } => {
-
             let v = match *lvalue {
                 Expr::Var(v) => v,
                 _ => unreachable!("Assignment lvalue should always be a Var"),
@@ -202,6 +207,47 @@ fn tacky_expr(expr: ast::Expr) -> (Vec<tacky::Instruction>, tacky::Val) {
 
             (instructions, tacky::Val::Var(v))
         }
+        Expr::CompoundAssignment { op, lvalue, expr } => tacky_compound_expression(op, *lvalue, *expr),
+        Expr::PostfixInc(expr) => {
+            let expr = match *expr {
+                Expr::Var(v) => Val::Var(v),
+                _ => unreachable!("Assignment lvalue should always be a Var"),
+            };
+
+            let dest = Val::Var(make_temp());
+            
+            let instructions = vec![
+                Instruction::Copy { src: expr.clone(), dest: dest.clone() },
+                Instruction::Binary {
+                    op: tacky_binop(BinaryOp::Add),
+                    first: expr.clone(),
+                    second: Val::Constant(1),
+                    dest: expr.clone(),
+                }
+            ];
+
+            (instructions, dest)
+        }
+        Expr::PostfixDec(expr) => {
+            let expr = match *expr {
+                Expr::Var(v) => Val::Var(v),
+                _ => unreachable!("Assignment lvalue should always be a Var"),
+            };
+
+            let dest = Val::Var(make_temp());
+
+            let instructions = vec![
+                Instruction::Copy { src: expr.clone(), dest: dest.clone() },
+                Instruction::Binary {
+                    op: tacky_binop(BinaryOp::Subtract),
+                    first: expr.clone(),
+                    second: Val::Constant(1),
+                    dest: expr.clone(),
+                }
+            ];
+
+            (instructions, dest)
+        }
     }
 }
 
@@ -210,6 +256,7 @@ fn tacky_unop(op: ast::UnaryOp) -> tacky::UnaryOp {
         ast::UnaryOp::Complement => tacky::UnaryOp::Complement,
         ast::UnaryOp::Negate => tacky::UnaryOp::Negate,
         ast::UnaryOp::Not => tacky::UnaryOp::Not,
+        _ => unreachable!("Inc and Dec shouldn't be handled here")
     }
 }
 
@@ -240,4 +287,24 @@ fn tacky_binop(op: ast::BinaryOp) -> tacky::BinaryOp {
             panic!("Internal error, cannot convert {:?} directly to TACKY", op)
         }
     }
+}
+
+fn tacky_compound_expression(op: BinaryOp, lvalue: Expr, rhs: Expr) -> (Vec<Instruction>, Val) {
+    let (mut instructions, rhs) = tacky_expr(rhs);
+
+    let dest= match lvalue {
+        Expr::Var(v) => Val::Var(v),
+        _ => unreachable!("Assignment lvalue should always be a Var"),
+    };
+
+    let op = tacky_binop(op);
+
+    instructions.push(Instruction::Binary {
+        op,
+        first: dest.clone(),
+        second: rhs,
+        dest: dest.clone(),
+    });
+
+    (instructions, dest)
 }

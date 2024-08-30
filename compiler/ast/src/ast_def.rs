@@ -47,6 +47,13 @@ pub enum Expr {
         lvalue: Box<Expr>,
         expr: Box<Expr>,
     },
+    CompoundAssignment {
+        op: BinaryOp,
+        lvalue: Box<Expr>,
+        expr: Box<Expr>,
+    },
+    PostfixInc(Box<Expr>),
+    PostfixDec(Box<Expr>),
 }
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
@@ -54,6 +61,8 @@ pub enum UnaryOp {
     Complement,
     Negate,
     Not,
+    Inc,
+    Dec,
 }
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
