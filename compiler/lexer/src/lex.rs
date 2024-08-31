@@ -117,6 +117,7 @@ pub enum TokenType {
     Else,
     Void,
     Return,
+    Goto,
 
     // Informational
     Whitespace,
@@ -372,6 +373,7 @@ impl<'a> Lexer<'a> {
             "else" => TokenType::Else,
             "void" => TokenType::Void,
             "return" => TokenType::Return,
+            "goto" => TokenType::Goto,
             _ => TokenType::Identifier,
         }
     }
@@ -488,4 +490,27 @@ mod tests {
         assert_eq!(tokens, expected)
     }
 
+    #[test]
+    fn goto() {
+        let src = "goto label;";
+        let expected = vec![Goto, Identifier, Semicolon];
+
+        let mut lexer = Lexer::new(src);
+        let tokens = lexer.tokenize();
+        let tokens: Vec<_> = tokens.map(|t| t.kind).collect();
+
+        assert_eq!(tokens, expected)
+    }
+
+    #[test]
+    fn label() {
+        let src = "label: return 1;";
+        let expected = vec![Identifier, Colon, Return, Constant, Semicolon];
+
+        let mut lexer = Lexer::new(src);
+        let tokens = lexer.tokenize();
+        let tokens: Vec<_> = tokens.map(|t| t.kind).collect();
+
+        assert_eq!(tokens, expected)
+    }
 }

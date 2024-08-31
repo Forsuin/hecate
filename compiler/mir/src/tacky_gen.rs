@@ -88,6 +88,17 @@ fn tacky_stmt(stmt: ast::Stmt) -> Vec<tacky::Instruction> {
         ast::Stmt::Null => {
             vec![]
         }
+
+        Stmt::Goto { label } => {
+            vec![Instruction::Jump { target: label }]
+        }
+        Stmt::LabeledStmt { label, stmt } => {
+            let mut instructions = vec![Instruction::Label(label)];
+
+            instructions.append(&mut tacky_stmt(*stmt));
+
+            instructions
+        }
     }
 
 }
@@ -281,7 +292,7 @@ fn tacky_expr(expr: ast::Expr) -> (Vec<tacky::Instruction>, tacky::Val) {
             let end_label = make_label("end_if");
             let result_name = make_temp();
             let result = Val::Var(result_name);
-            
+
             let (mut instructions, c) = tacky_expr(*condition);
 
             instructions.push(Instruction::JumpIfZero {

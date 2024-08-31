@@ -74,6 +74,13 @@ fn resolve_stmt(stmt: &Stmt, var_map: &VarMap) -> Stmt {
             },
         },
         Stmt::Null => Stmt::Null,
+        Stmt::Goto { label } => Stmt::Goto {label: label.clone()},
+        Stmt::LabeledStmt { label, stmt } => {
+            Stmt::LabeledStmt {
+                label: label.clone(),
+                stmt: Box::from(resolve_stmt(stmt, var_map)),
+            }
+        }
     }
 }
 

@@ -5,29 +5,31 @@ pub struct TranslationUnit {
     pub func: Func,
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub struct Func {
     pub ident: String,
     pub body: Vec<BlockItem>
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub enum BlockItem {
     S(Stmt),
     D(Decl),
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub struct Decl {
     pub name: String,
     pub init: Option<Expr>,
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub enum Stmt {
     Return { expr: Expr },
     Expression { expr: Expr },
     If { condition: Expr, then: Box<Stmt>, otherwise: Option<Box<Stmt>> },
+    Goto { label: String},
+    LabeledStmt { label: String, stmt: Box<Stmt>},
     Null,
 }
 

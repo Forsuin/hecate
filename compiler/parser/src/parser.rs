@@ -144,11 +144,14 @@ impl Parser {
     }
 
     fn parse_stmt(&mut self) -> Result<Stmt, ParseError> {
-        match self.peek() {
-            Some(Token {
-                kind: TokenType::Return,
-                ..
-            }) => {
+        match self.peek_2() {
+            (
+                Some(Token {
+                    kind: TokenType::Return,
+                    ..
+                }),
+                _,
+            ) => {
                 self.expect(TokenType::Return)?;
 
                 let expr = self.parse_expr(0)?;
@@ -157,17 +160,23 @@ impl Parser {
 
                 Ok(Stmt::Return { expr })
             }
-            Some(Token {
-                kind: TokenType::Semicolon,
-                ..
-            }) => {
+            (
+                Some(Token {
+                    kind: TokenType::Semicolon,
+                    ..
+                }),
+                _,
+            ) => {
                 self.expect(TokenType::Semicolon)?;
                 Ok(Stmt::Null)
             }
-            Some(Token {
-                kind: TokenType::If,
-                ..
-            }) => {
+            (
+                Some(Token {
+                    kind: TokenType::If,
+                    ..
+                }),
+                _,
+            ) => {
                 self.expect(TokenType::If)?;
                 self.expect(TokenType::OpenParen)?;
 
@@ -193,6 +202,38 @@ impl Parser {
                     condition,
                     then: Box::from(then),
                     otherwise,
+                })
+            }
+            (
+                Some(Token {
+                    kind: TokenType::Goto,
+                    ..
+                }),
+                _,
+            ) => {
+                self.expect(TokenType::Goto)?;
+                let label = self.parse_ident()?;
+                self.expect(TokenType::Semicolon)?;
+
+                Ok(Stmt::Goto { label })
+            }
+            (
+                Some(Token {
+                    kind: TokenType::Identifier,
+                    value: TokenValue::Ident(ident),
+                    ..
+                }),
+                Some(Token {
+                    kind: TokenType::Colon,
+                    ..
+                }),
+            ) => {
+                self.expect(TokenType::Identifier)?;
+                self.expect(TokenType::Colon)?;
+
+                Ok(Stmt::LabeledStmt {
+                    label: ident,
+                    stmt: Box::from(self.parse_stmt()?),
                 })
             }
             _ => {
@@ -485,6 +526,14 @@ impl Parser {
 
     fn peek(&mut self) -> Option<Token> {
         self.tokens.peek().cloned()
+    }
+
+    fn peek_2(&mut self) -> (Option<Token>, Option<Token>) {
+        let mut tokens = self.tokens.clone();
+        let first = tokens.next();
+        let second = tokens.next();
+
+        (first, second)
     }
 }
 

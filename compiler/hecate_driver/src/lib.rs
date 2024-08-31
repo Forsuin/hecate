@@ -10,7 +10,7 @@ use emission::output;
 use lexer::{Lexer, TokenType};
 use mir::gen_tacky;
 use parser::Parser;
-use semantic_analysis::resolve;
+use semantic_analysis::{resolve, validate_labels};
 
 #[derive(ClapParser, Debug)]
 #[command(version, about, long_about = "Runs the Hecate C compiler")]
@@ -180,27 +180,7 @@ fn compile(path: &str, stop_stage: &Option<StopStage>, assm_path: &str) -> Resul
         }
 
         return Err(CompileErr::Lexer(error_msgs).into());
-    } else {
-        // for t in &tokens {
-        //     println!(
-        //         "TokenType: {:<10}, Value: {:<15}, Lexeme: {:<15}, Location: {}:{}:{}",
-        //         format!("{:?}", t.kind),
-        //         format!("{:?}", t.value),
-        //         format!("{:?}", source[t.start..t.end].to_string()),
-        //         path.rsplit_once('/').unwrap().1,
-        //         t.line,
-        //         t.col,
-        //     );
-        // }
-    }
-
-    // for token in lexer.tokenize() {
-    //     if token.kind != TokenType::Whitespace {
-    //         println!("{}", token);
-    //     } else {
-    //         continue;
-    //     }
-    // }
+    } else {}
 
     if let Some(StopStage::Lexer) = stop_stage {
         // tokenize() should have returned any error by now
@@ -217,6 +197,8 @@ fn compile(path: &str, stop_stage: &Option<StopStage>, assm_path: &str) -> Resul
     }
 
     let resolved_ast = resolve(&ast);
+
+    validate_labels(&resolved_ast);
 
     if let Some(StopStage::Analysis) = stop_stage {
         return Ok(());
