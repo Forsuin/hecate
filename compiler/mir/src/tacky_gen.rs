@@ -1,8 +1,9 @@
-use ast::{BinaryOp, BlockItem, Expr, UnaryOp};
+use ast::{BinaryOp, BlockItem, Expr, Stmt, UnaryOp};
 use unique_ident::*;
 
 use crate::tacky;
 use crate::tacky::{Instruction, Val};
+use crate::tacky::Instruction::Jump;
 
 pub fn gen_tacky(ast: ast::TranslationUnit) -> tacky::TranslationUnit {
     match ast {
@@ -58,10 +59,37 @@ fn tacky_stmt(stmt: ast::Stmt) -> Vec<tacky::Instruction> {
             let (instructions, _) = tacky_expr(expr);
             instructions
         }
+        Stmt::If { condition, then, otherwise } => {
+            let else_label = make_label("else_branch");
+            let end_label = make_label("end_if");
+
+            let (mut instructions, c) = tacky_expr(condition);
+
+            instructions.push(Instruction::JumpIfZero {
+                condition: c,
+                target: if otherwise.is_some() { else_label.clone() } else { end_label.clone() },
+            });
+
+            instructions.append(&mut tacky_stmt(*then));
+
+            if let Some(otherwise) = otherwise {
+                instructions.push(Jump { target: end_label.clone() });
+                instructions.push(Instruction::Label(else_label.clone()));
+                instructions.append(&mut tacky_stmt(*otherwise));
+            }
+            else {
+                // Do nothing
+            }
+
+            instructions.push(Instruction::Label(end_label.clone()));
+
+            instructions
+        }
         ast::Stmt::Null => {
             vec![]
         }
     }
+
 }
 
 fn tacky_expr(expr: ast::Expr) -> (Vec<tacky::Instruction>, tacky::Val) {
@@ -247,6 +275,44 @@ fn tacky_expr(expr: ast::Expr) -> (Vec<tacky::Instruction>, tacky::Val) {
             ];
 
             (instructions, dest)
+        }
+        Expr::Conditional { condition, then, otherwise } => {
+            let else_label = make_label("else_branch");
+            let end_label = make_label("end_if");
+            let result_name = make_temp();
+            let result = Val::Var(result_name);
+            
+            let (mut instructions, c) = tacky_expr(*condition);
+
+            instructions.push(Instruction::JumpIfZero {
+                condition: c,
+                target: else_label.clone(),
+            });
+
+            let (mut then_instructions, v1) = tacky_expr(*then);
+            instructions.append(&mut then_instructions);
+
+            instructions.push(Instruction::Copy {
+                src: v1,
+                dest: result.clone(),
+            });
+            instructions.push(Instruction::Jump {
+               target: end_label.clone()
+            });
+
+            instructions.push(Instruction::Label(else_label));
+
+            let (mut else_instructions, v2) = tacky_expr(*otherwise);
+            instructions.append(&mut else_instructions);
+
+            instructions.push(Instruction::Copy {
+                src: v2,
+                dest: result.clone(),
+            });
+
+            instructions.push(Instruction::Label(end_label));
+
+            (instructions, result)
         }
     }
 }

@@ -27,6 +27,7 @@ pub struct Decl {
 pub enum Stmt {
     Return { expr: Expr },
     Expression { expr: Expr },
+    If { condition: Expr, then: Box<Stmt>, otherwise: Option<Box<Stmt>> },
     Null,
 }
 
@@ -46,6 +47,11 @@ pub enum Expr {
     Assignment {
         lvalue: Box<Expr>,
         expr: Box<Expr>,
+    },
+    Conditional {
+        condition: Box<Expr>,
+        then: Box<Expr>,
+        otherwise: Box<Expr>,
     },
     CompoundAssignment {
         op: BinaryOp,

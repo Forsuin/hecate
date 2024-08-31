@@ -70,6 +70,8 @@ pub enum TokenType {
     CloseBrace,
     Semicolon,
     Tilde,
+    Question,
+    Colon,
 
     // One or two character tokens
     Bang,
@@ -111,6 +113,8 @@ pub enum TokenType {
 
     // Keywords
     Int,
+    If,
+    Else,
     Void,
     Return,
 
@@ -179,6 +183,8 @@ impl<'a> Lexer<'a> {
             '{' => TokenType::OpenBrace,
             '}' => TokenType::CloseBrace,
             ';' => TokenType::Semicolon,
+            ':' => TokenType::Colon,
+            '?' => TokenType::Question,
             '~' => TokenType::Tilde,
             '-' => match self.peek() {
                 '-' => {
@@ -362,6 +368,8 @@ impl<'a> Lexer<'a> {
 
         match text.as_str() {
             "int" => TokenType::Int,
+            "if" => TokenType::If,
+            "else" => TokenType::Else,
             "void" => TokenType::Void,
             "return" => TokenType::Return,
             _ => TokenType::Identifier,
@@ -387,7 +395,7 @@ impl<'a> Lexer<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::TokenType::{AmpEqual, GreaterGreaterEqual, LessLessEqual, MinusEqual, MinusMinus, PercentEqual, PipeEqual, PlusEqual, PlusPlus, SlashEqual, StarEqual, XorEqual};
+    use crate::TokenType::*;
     use super::*;
 
     #[test]
@@ -448,6 +456,30 @@ mod tests {
     fn inc_dec_ops() {
         let src = "++ --";
         let expected = vec![PlusPlus, MinusMinus];
+
+        let mut lexer = Lexer::new(src);
+        let tokens = lexer.tokenize();
+        let tokens: Vec<_> = tokens.map(|t| t.kind).collect();
+
+        assert_eq!(tokens, expected)
+    }
+
+    #[test]
+    fn if_else() {
+        let src = "if else";
+        let expected = vec![If, Else];
+
+        let mut lexer = Lexer::new(src);
+        let tokens = lexer.tokenize();
+        let tokens: Vec<_> = tokens.map(|t| t.kind).collect();
+
+        assert_eq!(tokens, expected)
+    }
+
+    #[test]
+    fn conditional_expr() {
+        let src = "? :";
+        let expected = vec![Question, Colon];
 
         let mut lexer = Lexer::new(src);
         let tokens = lexer.tokenize();

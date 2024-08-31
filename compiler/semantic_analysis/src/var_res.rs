@@ -6,7 +6,9 @@ use unique_ident::make_temp_name;
 type VarMap = HashMap<String, String>;
 
 pub fn resolve(program: &TranslationUnit) -> TranslationUnit {
-    TranslationUnit { func: resolve_func(&program.func) }
+    TranslationUnit {
+        func: resolve_func(&program.func),
+    }
 }
 
 fn resolve_func(func: &Func) -> Func {
@@ -18,7 +20,10 @@ fn resolve_func(func: &Func) -> Func {
         resolved_body.push(resolve_block_item(block_item, &mut var_map))
     }
 
-    Func { ident: func.ident.clone(), body: resolved_body }
+    Func {
+        ident: func.ident.clone(),
+        body: resolved_body,
+    }
 }
 
 fn resolve_block_item(item: &BlockItem, var_map: &mut VarMap) -> BlockItem {
@@ -31,21 +36,43 @@ fn resolve_block_item(item: &BlockItem, var_map: &mut VarMap) -> BlockItem {
 fn resolve_decl(decl: &Decl, var_map: &mut VarMap) -> Decl {
     if var_map.contains_key(&decl.name) {
         panic!("Duplicate variable declaration");
-    }
-    else {
+    } else {
         let unique_name = make_temp_name(&decl.name);
         var_map.insert(decl.name.clone(), unique_name.clone());
 
-        let init = decl.init.is_some().then(|| resolve_expr(decl.init.as_ref().unwrap(), var_map));
+        let init = decl
+            .init
+            .is_some()
+            .then(|| resolve_expr(decl.init.as_ref().unwrap(), var_map));
 
-        Decl { name: unique_name, init }
+        Decl {
+            name: unique_name,
+            init,
+        }
     }
 }
 
 fn resolve_stmt(stmt: &Stmt, var_map: &VarMap) -> Stmt {
     match stmt {
-        Stmt::Return { expr } => Stmt::Return { expr: resolve_expr(expr, var_map) },
-        Stmt::Expression { expr } => Stmt::Expression { expr: resolve_expr(expr, var_map) },
+        Stmt::Return { expr } => Stmt::Return {
+            expr: resolve_expr(expr, var_map),
+        },
+        Stmt::Expression { expr } => Stmt::Expression {
+            expr: resolve_expr(expr, var_map),
+        },
+        Stmt::If {
+            condition,
+            then,
+            otherwise,
+        } => Stmt::If {
+            condition: resolve_expr(condition, var_map),
+            then: Box::from(resolve_stmt(then, var_map)),
+            otherwise: if let Some(otherwise) = otherwise {
+                Some(Box::from(resolve_stmt(otherwise, var_map)))
+            } else {
+                None
+            },
+        },
         Stmt::Null => Stmt::Null,
     }
 }
@@ -60,9 +87,25 @@ fn resolve_expr(expr: &Expr, var_map: &VarMap) -> Expr {
                 panic!("Undeclared Variable")
             }
         }
-        Expr::Unary { op, expr } => Expr::Unary {
-            op: *op,
-            expr: Box::from(resolve_expr(expr, var_map)),
+        Expr::Unary { op, expr } => {
+            match op {
+                UnaryOp::Inc | UnaryOp::Dec => {
+                    if !matches!(**expr, Expr::Var(_)) {
+                        panic!("Operand of ++/-- must be variable");
+                    }
+
+                    Expr::Unary {
+                        op: *op,
+                        expr: Box::from(resolve_expr(expr, var_map)),
+                    }
+                }
+                _ => {
+                    Expr::Unary {
+                        op: *op,
+                        expr: Box::from(resolve_expr(expr, var_map)),
+                    }
+                }
+            }
         },
         Expr::Binary { op, left, right } => Expr::Binary {
             op: op.clone(),
@@ -77,8 +120,17 @@ fn resolve_expr(expr: &Expr, var_map: &VarMap) -> Expr {
                 lvalue: Box::from(resolve_expr(lvalue, var_map)),
                 expr: Box::from(resolve_expr(expr, var_map)),
             }
+        }
+        Expr::Conditional {
+            condition,
+            then,
+            otherwise,
+        } => Expr::Conditional {
+            condition: Box::new(resolve_expr(condition, var_map)),
+            then: Box::new(resolve_expr(then, var_map)),
+            otherwise: Box::new(resolve_expr(otherwise, var_map)),
         },
-        Expr::CompoundAssignment {op, lvalue, expr} => {
+        Expr::CompoundAssignment { op, lvalue, expr } => {
             if !matches!(**lvalue, Expr::Var(_)) {
                 panic!("Invalid lvalue");
             }

@@ -4,7 +4,7 @@ use std::iter::Peekable;
 use thiserror::Error;
 
 use ast::*;
-use ast::Expr::{Assignment, CompoundAssignment};
+use ast::Expr::{Assignment, CompoundAssignment, Conditional};
 use lexer::*;
 
 #[derive(Error, Clone, Debug)]
@@ -164,6 +164,37 @@ impl Parser {
                 self.expect(TokenType::Semicolon)?;
                 Ok(Stmt::Null)
             }
+            Some(Token {
+                kind: TokenType::If,
+                ..
+            }) => {
+                self.expect(TokenType::If)?;
+                self.expect(TokenType::OpenParen)?;
+
+                let condition = self.parse_expr(0)?;
+
+                self.expect(TokenType::CloseParen)?;
+
+                let then = self.parse_stmt()?;
+
+                let otherwise = match self.peek() {
+                    Some(Token {
+                        kind: TokenType::Else,
+                        ..
+                    }) => {
+                        self.expect(TokenType::Else)?;
+
+                        Some(Box::from(self.parse_stmt()?))
+                    }
+                    _ => None,
+                };
+
+                Ok(Stmt::If {
+                    condition,
+                    then: Box::from(then),
+                    otherwise,
+                })
+            }
             _ => {
                 let expr = Stmt::Expression {
                     expr: self.parse_expr(0)?,
@@ -193,6 +224,18 @@ impl Parser {
                                 lvalue: Box::from(left),
                                 expr: Box::from(right),
                             },
+                        }
+                    } else if next.kind == TokenType::Question {
+                        self.expect(TokenType::Question)?;
+                        let middle = self.parse_expr(0)?;
+                        self.expect(TokenType::Colon)?;
+
+                        let right = self.parse_expr(get_precedence(next.kind).unwrap())?;
+
+                        left = Conditional {
+                            condition: Box::from(left),
+                            then: Box::from(middle),
+                            otherwise: Box::from(right),
                         }
                     } else {
                         let operator = self.parse_binop()?;
@@ -459,6 +502,7 @@ fn get_precedence(token: TokenType) -> Option<i32> {
         TokenType::Pipe => Some(15),
         TokenType::AmpAmp => Some(10),
         TokenType::PipePipe => Some(5),
+        TokenType::Question => Some(3),
         TokenType::Equal
         | TokenType::PlusEqual
         | TokenType::MinusEqual
@@ -666,6 +710,150 @@ mod tests {
                 right: Box::new(Expr::Unary {
                     op: UnaryOp::Negate,
                     expr: Box::new(Expr::Constant(6))
+                }),
+            }
+        )
+    }
+
+    #[test]
+    fn if_stmt() {
+        let src = "if (a == 0) return 5;";
+        let tokens = Lexer::new(src).tokenize().collect();
+
+        let ast = Parser::new(tokens).parse_stmt().unwrap();
+
+        assert_eq!(
+            ast,
+            Stmt::If {
+                condition: Expr::Binary {
+                    op: BinaryOp::Equal,
+                    left: Box::from(Expr::Var("a".to_string())),
+                    right: Box::from(Expr::Constant(0)),
+                },
+                then: Box::new(Stmt::Return {
+                    expr: Expr::Constant(5)
+                }),
+                otherwise: None,
+            }
+        )
+    }
+
+    #[test]
+    fn if_else_stmt() {
+        let src = "if (a == 0) return 5; else return 4;";
+        let tokens = Lexer::new(src).tokenize().collect();
+
+        let ast = Parser::new(tokens).parse_stmt().unwrap();
+
+        assert_eq!(
+            ast,
+            Stmt::If {
+                condition: Expr::Binary {
+                    op: BinaryOp::Equal,
+                    left: Box::from(Expr::Var("a".to_string())),
+                    right: Box::from(Expr::Constant(0)),
+                },
+                then: Box::new(Stmt::Return {
+                    expr: Expr::Constant(5)
+                }),
+                otherwise: Some(Box::new(Stmt::Return {
+                    expr: Expr::Constant(4)
+                })),
+            }
+        )
+    }
+
+    #[test]
+    fn nested_if_stmt() {
+        let src = "if (a > 100) return 0; else if (a > 50) return 1; else return 2;";
+        let tokens = Lexer::new(src).tokenize().collect();
+
+        let ast = Parser::new(tokens).parse_stmt().unwrap();
+
+        assert_eq!(
+            ast,
+            Stmt::If {
+                condition: Expr::Binary {
+                    op: BinaryOp::Greater,
+                    left: Box::from(Expr::Var("a".to_string())),
+                    right: Box::from(Expr::Constant(100)),
+                },
+                then: Box::new(Stmt::Return {
+                    expr: Expr::Constant(0)
+                }),
+                otherwise: Some(Box::new(Stmt::If {
+                    condition: Expr::Binary {
+                        op: BinaryOp::Greater,
+                        left: Box::from(Expr::Var("a".to_string())),
+                        right: Box::from(Expr::Constant(50)),
+                    },
+                    then: Box::new(Stmt::Return {
+                        expr: Expr::Constant(1)
+                    }),
+                    otherwise: Some(Box::new(Stmt::Return {
+                        expr: Expr::Constant(2)
+                    })),
+                })),
+            }
+        )
+    }
+
+    #[test]
+    fn ternary_expr() {
+        let src = "a ? 1 : 0;";
+        let tokens = Lexer::new(src).tokenize().collect();
+
+        let ast = Parser::new(tokens).parse_expr(0).unwrap();
+
+        assert_eq!(
+            ast,
+            Expr::Conditional {
+                condition: Box::from(Expr::Var("a".to_string())),
+                then: Box::from(Expr::Constant(1)),
+                otherwise: Box::from(Expr::Constant(0)),
+            }
+        )
+    }
+
+    #[test]
+    fn assign_ternary_expr() {
+        let src = "a = 1 ? 2 : 3;";
+        let tokens = Lexer::new(src).tokenize().collect();
+
+        let ast = Parser::new(tokens).parse_expr(0).unwrap();
+
+        assert_eq!(
+            ast,
+            Expr::Assignment {
+                lvalue: Box::new(Expr::Var("a".to_string())),
+                expr: Box::new(Expr::Conditional {
+                    condition: Box::from(Expr::Constant(1)),
+                    then: Box::from(Expr::Constant(2)),
+                    otherwise: Box::from(Expr::Constant(3)),
+                }),
+            }
+        )
+    }
+
+    #[test]
+    fn ternary_expr_lower_precedence() {
+        let src = "a = 1 ? 2 : 3 || 4;";
+        let tokens = Lexer::new(src).tokenize().collect();
+
+        let ast = Parser::new(tokens).parse_expr(0).unwrap();
+
+        assert_eq!(
+            ast,
+            Expr::Assignment {
+                lvalue: Box::new(Expr::Var("a".to_string())),
+                expr: Box::new(Expr::Conditional {
+                    condition: Box::from(Expr::Constant(1)),
+                    then: Box::from(Expr::Constant(2)),
+                    otherwise: Box::from(Expr::Binary {
+                        op: BinaryOp::Or,
+                        left: Box::new(Expr::Constant(3)),
+                        right: Box::new(Expr::Constant(4)),
+                    }),
                 }),
             }
         )
