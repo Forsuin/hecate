@@ -16,7 +16,20 @@ pub fn gen_tacky(ast: ast::TranslationUnit) -> tacky::TranslationUnit {
 fn tacky_func(func: ast::Func) -> tacky::Func {
     let mut instructions = vec![];
 
-    for block_item in func.body {
+    instructions.append(&mut tacky_block(func.body));
+
+    instructions.push(Instruction::Return(Val::Constant(0)));
+
+    tacky::Func {
+        name: func.ident,
+        instructions,
+    }
+}
+
+fn tacky_block(block: ast::Block) -> Vec<Instruction> {
+    let mut instructions = vec![];
+
+    for block_item in block.items {
         match block_item {
             BlockItem::S(stmt) => {
                 for instruction in tacky_stmt(stmt) {
@@ -38,12 +51,7 @@ fn tacky_func(func: ast::Func) -> tacky::Func {
         }
     }
 
-    instructions.push(Instruction::Return(Val::Constant(0)));
-
-    tacky::Func {
-        name: func.ident,
-        instructions,
-    }
+    instructions
 }
 
 fn tacky_stmt(stmt: ast::Stmt) -> Vec<tacky::Instruction> {
@@ -98,6 +106,10 @@ fn tacky_stmt(stmt: ast::Stmt) -> Vec<tacky::Instruction> {
             instructions.append(&mut tacky_stmt(*stmt));
 
             instructions
+        }
+
+        Stmt::Compound { block } => {
+            tacky_block(block)
         }
     }
 

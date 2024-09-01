@@ -11,14 +11,18 @@ fn validate_func(func: &Func) {
     let mut defined = HashSet::new();
     let mut used = HashSet::new();
 
-    for item in &func.body {
-        validate_block_item(item, &mut defined, &mut used);
-    }
+    validate_block(&func.body, &mut defined, &mut used);
 
     let undefined: Vec<_> = used.difference(&defined).map(String::as_str).collect();
 
     if !undefined.is_empty() {
         panic!("Found labels that are used but not defined: {:?}", undefined.join(", "));
+    }
+}
+
+fn validate_block(block: &Block, defined: &mut LabelSet, used: &mut LabelSet) {
+    for item in &block.items {
+        validate_block_item(item, defined, used);
     }
 }
 
@@ -48,6 +52,11 @@ fn validate_stmt(stmt: &Stmt, defined: &mut LabelSet, used: &mut LabelSet) {
                 validate_stmt(otherwise, defined, used);
             }
         }
-        _ => {}
+        Stmt::Compound { block } => {
+            for item in &block.items {
+                validate_block_item(item, defined, used);
+            }
+        }
+        Stmt::Return { .. } | Stmt::Null | Stmt::Expression { .. } => {}
     }
 }

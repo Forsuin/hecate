@@ -3,7 +3,14 @@ use std::collections::HashMap;
 use ast::*;
 use unique_ident::make_temp_name;
 
-type VarMap = HashMap<String, String>;
+// var's original name -> (unique_name, from_current_block)
+
+struct VarEntry {
+    pub unique_name: String,
+    pub from_current_block: bool,
+}
+
+type VarMap = HashMap<String, VarEntry>;
 
 pub fn resolve(program: &TranslationUnit) -> TranslationUnit {
     TranslationUnit {
@@ -14,15 +21,23 @@ pub fn resolve(program: &TranslationUnit) -> TranslationUnit {
 fn resolve_func(func: &Func) -> Func {
     let mut var_map = VarMap::new();
 
-    let mut resolved_body = vec![];
-
-    for block_item in &func.body {
-        resolved_body.push(resolve_block_item(block_item, &mut var_map))
-    }
+    let resolved_body = resolve_block(&func.body, &mut var_map);
 
     Func {
         ident: func.ident.clone(),
         body: resolved_body,
+    }
+}
+
+fn resolve_block(block: &Block, var_map: &mut VarMap) -> Block {
+    let mut resolved_items = vec![];
+
+    for block_item in &block.items {
+        resolved_items.push(resolve_block_item(block_item, var_map))
+    }
+
+    Block {
+        items: resolved_items,
     }
 }
 
@@ -34,11 +49,17 @@ fn resolve_block_item(item: &BlockItem, var_map: &mut VarMap) -> BlockItem {
 }
 
 fn resolve_decl(decl: &Decl, var_map: &mut VarMap) -> Decl {
-    if var_map.contains_key(&decl.name) {
+    if var_map.contains_key(&decl.name) && var_map.get(&decl.name).unwrap().from_current_block {
         panic!("Duplicate variable declaration");
     } else {
         let unique_name = make_temp_name(&decl.name);
-        var_map.insert(decl.name.clone(), unique_name.clone());
+        var_map.insert(
+            decl.name.clone(),
+            VarEntry {
+                unique_name: unique_name.clone(),
+                from_current_block: true,
+            },
+        );
 
         let init = decl
             .init
@@ -74,11 +95,18 @@ fn resolve_stmt(stmt: &Stmt, var_map: &VarMap) -> Stmt {
             },
         },
         Stmt::Null => Stmt::Null,
-        Stmt::Goto { label } => Stmt::Goto {label: label.clone()},
-        Stmt::LabeledStmt { label, stmt } => {
-            Stmt::LabeledStmt {
-                label: label.clone(),
-                stmt: Box::from(resolve_stmt(stmt, var_map)),
+        Stmt::Goto { label } => Stmt::Goto {
+            label: label.clone(),
+        },
+        Stmt::LabeledStmt { label, stmt } => Stmt::LabeledStmt {
+            label: label.clone(),
+            stmt: Box::from(resolve_stmt(stmt, var_map)),
+        },
+
+        Stmt::Compound { block } => {
+            let mut var_map = copy_var_map(var_map);
+            Stmt::Compound {
+                block: resolve_block(block, &mut var_map)
             }
         }
     }
@@ -89,30 +117,26 @@ fn resolve_expr(expr: &Expr, var_map: &VarMap) -> Expr {
         Expr::Constant(c) => Expr::Constant(*c),
         Expr::Var(name) => {
             if var_map.contains_key(name) {
-                return Expr::Var(var_map.get(name).unwrap().to_string());
+                return Expr::Var(var_map.get(name).unwrap().unique_name.clone());
             } else {
                 panic!("Undeclared Variable")
             }
         }
-        Expr::Unary { op, expr } => {
-            match op {
-                UnaryOp::Inc | UnaryOp::Dec => {
-                    if !matches!(**expr, Expr::Var(_)) {
-                        panic!("Operand of ++/-- must be variable");
-                    }
-
-                    Expr::Unary {
-                        op: *op,
-                        expr: Box::from(resolve_expr(expr, var_map)),
-                    }
+        Expr::Unary { op, expr } => match op {
+            UnaryOp::Inc | UnaryOp::Dec => {
+                if !matches!(**expr, Expr::Var(_)) {
+                    panic!("Operand of ++/-- must be variable");
                 }
-                _ => {
-                    Expr::Unary {
-                        op: *op,
-                        expr: Box::from(resolve_expr(expr, var_map)),
-                    }
+
+                Expr::Unary {
+                    op: *op,
+                    expr: Box::from(resolve_expr(expr, var_map)),
                 }
             }
+            _ => Expr::Unary {
+                op: *op,
+                expr: Box::from(resolve_expr(expr, var_map)),
+            },
         },
         Expr::Binary { op, left, right } => Expr::Binary {
             op: op.clone(),
@@ -162,4 +186,15 @@ fn resolve_expr(expr: &Expr, var_map: &VarMap) -> Expr {
             Expr::PostfixDec(Box::from(resolve_expr(expr, var_map)))
         }
     }
+}
+
+fn copy_var_map(var_map: &VarMap) -> VarMap {
+    let new_map = var_map.iter().map(|(key, entry)| {
+        (key.clone(), VarEntry {
+            unique_name: entry.unique_name.clone(),
+            from_current_block: false,
+        })
+    }).collect();
+
+    new_map
 }
