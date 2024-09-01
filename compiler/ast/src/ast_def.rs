@@ -8,7 +8,12 @@ pub struct TranslationUnit {
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct Func {
     pub ident: String,
-    pub body: Vec<BlockItem>
+    pub body: Block
+}
+
+#[derive(Debug, Eq, PartialEq, Clone)]
+pub struct Block {
+    pub items: Vec<BlockItem>,
 }
 
 #[derive(Debug, Eq, PartialEq, Clone)]
@@ -25,6 +30,7 @@ pub struct Decl {
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub enum Stmt {
+    Compound { block: Block },
     Return { expr: Expr },
     Expression { expr: Expr },
     If { condition: Expr, then: Box<Stmt>, otherwise: Option<Box<Stmt>> },

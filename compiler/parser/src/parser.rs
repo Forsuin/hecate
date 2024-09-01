@@ -56,6 +56,13 @@ impl Parser {
         self.expect(TokenType::OpenParen)?;
         self.expect(TokenType::Void)?;
         self.expect(TokenType::CloseParen)?;
+
+        let body = self.parse_block()?;
+
+        Ok(Func { ident: name, body })
+    }
+
+    fn parse_block(&mut self) -> Result<Block, ParseError> {
         self.expect(TokenType::OpenBrace)?;
 
         let mut body = vec![];
@@ -71,7 +78,7 @@ impl Parser {
 
         self.expect(TokenType::CloseBrace)?;
 
-        Ok(Func { ident: name, body })
+        Ok(Block { items: body })
     }
 
     fn parse_block_item(&mut self) -> Result<BlockItem, ParseError> {
@@ -236,6 +243,15 @@ impl Parser {
                     stmt: Box::from(self.parse_stmt()?),
                 })
             }
+            (
+                Some(Token {
+                    kind: TokenType::OpenBrace,
+                    ..
+                }),
+                _,
+            ) => Ok(Stmt::Compound {
+                block: self.parse_block()?,
+            }),
             _ => {
                 let expr = Stmt::Expression {
                     expr: self.parse_expr(0)?,
