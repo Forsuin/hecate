@@ -1,17 +1,20 @@
 use std::fs::File;
-use std::io::Write;
+use std::io::{BufWriter, Write};
 
 use lir::*;
 
 pub fn output(path: &str, assm: Program) -> std::io::Result<()> {
-    let mut output = File::create(path)?;
+    let output = File::create(path)?;
+    let mut writer = BufWriter::new(output);
 
     match assm {
         Program { func } => {
-            emit_func(&mut output, func)?;
-            emit_stack_note(&mut output)?;
+            emit_func(&mut writer, func)?;
+            emit_stack_note(&mut writer)?;
         }
     }
+
+    writer.flush().expect("Unable to write assembly to output");
 
     Ok(())
 }
