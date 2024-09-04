@@ -39,13 +39,15 @@ struct StageOptions {
     #[arg(long)]
     codegen: bool,
 
+    /// Stop after TACKY generation
     #[arg(long)]
     tacky: bool,
 
+    /// Stop after semantic analysis
     #[arg(long)]
     validate: bool,
 
-    /// Emit assemly file, but do not assemble or link it
+    /// Emit assembly file, but do not assemble or link it
     #[arg(short = 'S')]
     s: bool,
 }
