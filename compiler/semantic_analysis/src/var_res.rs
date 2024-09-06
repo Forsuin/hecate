@@ -12,43 +12,31 @@ struct VarEntry {
 
 type VarMap = HashMap<String, VarEntry>;
 
-pub fn resolve(program: &TranslationUnit) -> TranslationUnit {
-    TranslationUnit {
-        func: resolve_func(&program.func),
-    }
+pub fn resolve(program: &mut TranslationUnit) {
+    resolve_func(&mut program.func)
 }
 
-fn resolve_func(func: &Func) -> Func {
+fn resolve_func(func: &mut Func) {
     let mut var_map = VarMap::new();
 
-    let resolved_body = resolve_block(&func.body, &mut var_map);
+    resolve_block(&mut func.body, &mut var_map);
+}
 
-    Func {
-        ident: func.ident.clone(),
-        body: resolved_body,
+fn resolve_block(block: &mut Block, var_map: &mut VarMap) {
+
+    for block_item in &mut block.items {
+        resolve_block_item(block_item, var_map)
     }
 }
 
-fn resolve_block(block: &Block, var_map: &mut VarMap) -> Block {
-    let mut resolved_items = vec![];
-
-    for block_item in &block.items {
-        resolved_items.push(resolve_block_item(block_item, var_map))
-    }
-
-    Block {
-        items: resolved_items,
-    }
-}
-
-fn resolve_block_item(item: &BlockItem, var_map: &mut VarMap) -> BlockItem {
+fn resolve_block_item(item: &mut BlockItem, var_map: &mut VarMap) {
     match item {
-        BlockItem::S(stmt) => BlockItem::S(resolve_stmt(stmt, var_map)),
-        BlockItem::D(decl) => BlockItem::D(resolve_decl(decl, var_map)),
+        BlockItem::S(stmt) => resolve_stmt(stmt, var_map),
+        BlockItem::D(decl) => resolve_decl(decl, var_map),
     }
 }
 
-fn resolve_decl(decl: &Decl, var_map: &mut VarMap) -> Decl {
+fn resolve_decl(decl: &mut Decl, var_map: &mut VarMap) {
     if var_map.contains_key(&decl.name) && var_map.get(&decl.name).unwrap().from_current_block {
         panic!("Duplicate variable declaration");
     } else {
@@ -61,129 +49,107 @@ fn resolve_decl(decl: &Decl, var_map: &mut VarMap) -> Decl {
             },
         );
 
-        let init = decl
-            .init
-            .is_some()
-            .then(|| resolve_expr(decl.init.as_ref().unwrap(), var_map));
-
-        Decl {
-            name: unique_name,
-            init,
+        if let Some(init) = decl.init.as_mut() {
+            resolve_expr(init, var_map);
         }
+
+        decl.name = unique_name;
+
     }
 }
 
-fn resolve_stmt(stmt: &Stmt, var_map: &VarMap) -> Stmt {
+fn resolve_stmt(stmt: &mut Stmt, var_map: &VarMap) {
     match stmt {
-        Stmt::Return { expr } => Stmt::Return {
-            expr: resolve_expr(expr, var_map),
+        Stmt::Return { expr } => {
+            resolve_expr(expr, var_map);
         },
-        Stmt::Expression { expr } => Stmt::Expression {
-            expr: resolve_expr(expr, var_map),
+        Stmt::Expression { expr } => {
+            resolve_expr(expr, var_map);
         },
         Stmt::If {
             condition,
             then,
             otherwise,
-        } => Stmt::If {
-            condition: resolve_expr(condition, var_map),
-            then: Box::from(resolve_stmt(then, var_map)),
-            otherwise: if let Some(otherwise) = otherwise {
-                Some(Box::from(resolve_stmt(otherwise, var_map)))
-            } else {
-                None
-            },
+        } => {
+             resolve_expr(condition, var_map);
+             resolve_stmt(then, var_map);
+             if let Some(otherwise) = otherwise {
+                resolve_stmt(otherwise, var_map);
+            }
         },
-        Stmt::Null => Stmt::Null,
-        Stmt::Goto { label } => Stmt::Goto {
-            label: label.clone(),
-        },
-        Stmt::LabeledStmt { label, stmt } => Stmt::LabeledStmt {
-            label: label.clone(),
-            stmt: Box::from(resolve_stmt(stmt, var_map)),
+        Stmt::Null => {},
+        Stmt::Goto { label: _ } => {},
+        Stmt::LabeledStmt { label: _, stmt } =>  {
+            resolve_stmt(stmt, var_map);
         },
 
         Stmt::Compound { block } => {
-            let mut var_map = copy_var_map(var_map);
-            Stmt::Compound {
-                block: resolve_block(block, &mut var_map)
-            }
+            let mut new_map = copy_var_map(var_map);
+            resolve_block(block, &mut new_map);
         }
     }
 }
 
-fn resolve_expr(expr: &Expr, var_map: &VarMap) -> Expr {
+fn resolve_expr(expr: &mut Expr, var_map: &VarMap) {
     match expr {
-        Expr::Constant(c) => Expr::Constant(*c),
+        Expr::Constant(_) => {},
         Expr::Var(name) => {
             if var_map.contains_key(name) {
-                return Expr::Var(var_map.get(name).unwrap().unique_name.clone());
-            } else {
+                *name = var_map.get(&name.clone()).unwrap().unique_name.clone();
+            }
+            else {
                 panic!("Undeclared Variable")
             }
         }
-        Expr::Unary { op, expr } => match op {
-            UnaryOp::Inc | UnaryOp::Dec => {
+        Expr::Unary { op, expr } => {
+            if matches!(op, UnaryOp::Inc | UnaryOp::Dec) {
                 if !matches!(**expr, Expr::Var(_)) {
                     panic!("Operand of ++/-- must be variable");
                 }
-
-                Expr::Unary {
-                    op: *op,
-                    expr: Box::from(resolve_expr(expr, var_map)),
-                }
             }
-            _ => Expr::Unary {
-                op: *op,
-                expr: Box::from(resolve_expr(expr, var_map)),
-            },
+            resolve_expr(expr, var_map);
         },
-        Expr::Binary { op, left, right } => Expr::Binary {
-            op: op.clone(),
-            left: Box::from(resolve_expr(left, var_map)),
-            right: Box::from(resolve_expr(right, var_map)),
+        Expr::Binary { op: _, left, right } => {
+            resolve_expr(left, var_map);
+            resolve_expr(right, var_map);
         },
         Expr::Assignment { lvalue, expr } => {
             if !matches!(**lvalue, Expr::Var(_)) {
                 panic!("Invalid lvalue");
             }
-            Expr::Assignment {
-                lvalue: Box::from(resolve_expr(lvalue, var_map)),
-                expr: Box::from(resolve_expr(expr, var_map)),
-            }
+
+            resolve_expr(lvalue, var_map);
+            resolve_expr(expr, var_map);
         }
         Expr::Conditional {
             condition,
             then,
             otherwise,
-        } => Expr::Conditional {
-            condition: Box::new(resolve_expr(condition, var_map)),
-            then: Box::new(resolve_expr(then, var_map)),
-            otherwise: Box::new(resolve_expr(otherwise, var_map)),
+        } => {
+            resolve_expr(condition, var_map);
+            resolve_expr(then, var_map);
+            resolve_expr(otherwise, var_map);
         },
-        Expr::CompoundAssignment { op, lvalue, expr } => {
+        Expr::CompoundAssignment { op: _, lvalue, expr } => {
             if !matches!(**lvalue, Expr::Var(_)) {
                 panic!("Invalid lvalue");
             }
-            Expr::CompoundAssignment {
-                op: *op,
-                lvalue: Box::from(resolve_expr(lvalue, var_map)),
-                expr: Box::from(resolve_expr(expr, var_map)),
-            }
+
+            resolve_expr(lvalue, var_map);
+            resolve_expr(expr, var_map);
         }
         Expr::PostfixInc(expr) => {
             if !matches!(**expr, Expr::Var(_)) {
                 panic!("Invalid lvalue");
             }
 
-            Expr::PostfixInc(Box::from(resolve_expr(expr, var_map)))
+            resolve_expr(expr, var_map);
         }
         Expr::PostfixDec(expr) => {
             if !matches!(**expr, Expr::Var(_)) {
                 panic!("Invalid lvalue");
             }
-
-            Expr::PostfixDec(Box::from(resolve_expr(expr, var_map)))
+            resolve_expr(expr, var_map);
         }
     }
 }

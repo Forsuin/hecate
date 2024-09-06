@@ -6,3 +6,4 @@ edition = "2021"
 [dependencies]
 ast = { path = "../ast" }
 unique_ident = { path = "../unique_ident" }
+thiserror = "1.0.63"
