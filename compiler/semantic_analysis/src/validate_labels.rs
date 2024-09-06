@@ -1,62 +1,76 @@
 use std::collections::HashSet;
+
 use ast::*;
 
-pub fn validate_labels(program: &TranslationUnit) {
-    validate_func(&program.func);
+use crate::sem_err::SemErr;
+
+pub fn validate_labels(program: &TranslationUnit) -> Result<(), SemErr> {
+    Ok(validate_func(&program.func)?)
 }
 
 type LabelSet = HashSet<String>;
 
-fn validate_func(func: &Func) {
+fn validate_func(func: &Func) -> Result<(), SemErr>  {
     let mut defined = HashSet::new();
     let mut used = HashSet::new();
 
-    validate_block(&func.body, &mut defined, &mut used);
+    validate_block(&func.body, &mut defined, &mut used)?;
 
     let undefined: Vec<_> = used.difference(&defined).map(String::as_str).collect();
 
     if !undefined.is_empty() {
-        panic!("Found labels that are used but not defined: {:?}", undefined.join(", "));
+        return Err(SemErr::new(format!("Found labels that are used but not defined: {:?}", undefined.join(", "))));
     }
+
+    Ok(())
 }
 
-fn validate_block(block: &Block, defined: &mut LabelSet, used: &mut LabelSet) {
+fn validate_block(block: &Block, defined: &mut LabelSet, used: &mut LabelSet)-> Result<(), SemErr> {
     for item in &block.items {
-        validate_block_item(item, defined, used);
+        validate_block_item(item, defined, used)?;
     }
+
+    Ok(())
 }
 
-fn validate_block_item(item: &BlockItem, defined: &mut LabelSet, used: &mut LabelSet) {
+fn validate_block_item(item: &BlockItem, defined: &mut LabelSet, used: &mut LabelSet)-> Result<(), SemErr> {
     match item {
         BlockItem::S(stmt) => validate_stmt(stmt, defined, used),
-        BlockItem::D(_) => {}
+        BlockItem::D(_) => {
+            Ok(())
+        }
     }
 }
 
-fn validate_stmt(stmt: &Stmt, defined: &mut LabelSet, used: &mut LabelSet) {
+fn validate_stmt(stmt: &Stmt, defined: &mut LabelSet, used: &mut LabelSet)-> Result<(), SemErr> {
     match stmt {
         Stmt::Goto { label } => {
             used.insert(label.clone());
+            Ok(())
         }
         Stmt::LabeledStmt { label, stmt } => {
             if defined.contains(label) {
-               panic!("Duplicate label: {}", label);
+                return Err(SemErr::new(format!("Duplicate label: {}", label)));
             }
 
             defined.insert(label.clone());
-            validate_stmt(stmt, defined, used);
+            Ok(validate_stmt(stmt, defined, used)?)
         }
         Stmt::If { condition: _condition, then, otherwise } => {
-            validate_stmt(then, defined, used);
+            validate_stmt(then, defined, used)?;
             if let Some(otherwise) = otherwise {
-                validate_stmt(otherwise, defined, used);
+                validate_stmt(otherwise, defined, used)?;
             }
+
+            Ok(())
         }
         Stmt::Compound { block } => {
             for item in &block.items {
-                validate_block_item(item, defined, used);
+                validate_block_item(item, defined, used)?;
             }
+
+            Ok(())
         }
-        Stmt::Return { .. } | Stmt::Null | Stmt::Expression { .. } => {}
+        Stmt::Return { .. } | Stmt::Null | Stmt::Expression { .. } => { Ok(()) }
     }
 }

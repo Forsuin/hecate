@@ -190,7 +190,7 @@ fn compile(path: &str, stop_stage: &Option<StopStage>, assm_path: &str) -> Resul
     }
 
     let mut parser = Parser::new(tokens);
-    let ast = parser.parse()?;
+    let mut ast = parser.parse()?;
 
     // println!("AST:\n{:#?}", ast);
 
@@ -198,17 +198,19 @@ fn compile(path: &str, stop_stage: &Option<StopStage>, assm_path: &str) -> Resul
         return Ok(());
     }
 
-    let resolved_ast = resolve(&ast);
+    resolve(&mut ast)?;
 
-    validate_labels(&resolved_ast);
+    validate_labels(&ast)?;
+
+    println!("RESOLVED AST:\n{:#?}", ast);
 
     if let Some(StopStage::Analysis) = stop_stage {
         return Ok(());
     }
 
-    let tacky = gen_tacky(resolved_ast);
+    let tacky = gen_tacky(ast);
 
-    // println!("TACKY:\n{:#?}", tacky);
+    println!("TACKY:\n{:#?}", tacky);
 
     if let Some(StopStage::Tacky) = stop_stage {
         return Ok(());
