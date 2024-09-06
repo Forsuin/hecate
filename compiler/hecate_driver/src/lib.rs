@@ -202,7 +202,7 @@ fn compile(path: &str, stop_stage: &Option<StopStage>, assm_path: &str) -> Resul
 
     validate_labels(&ast)?;
 
-    println!("RESOLVED AST:\n{:#?}", ast);
+    // println!("RESOLVED AST:\n{:#?}", ast);
 
     if let Some(StopStage::Analysis) = stop_stage {
         return Ok(());
@@ -210,7 +210,7 @@ fn compile(path: &str, stop_stage: &Option<StopStage>, assm_path: &str) -> Resul
 
     let tacky = gen_tacky(ast);
 
-    println!("TACKY:\n{:#?}", tacky);
+    // println!("TACKY:\n{:#?}", tacky);
 
     if let Some(StopStage::Tacky) = stop_stage {
         return Ok(());
