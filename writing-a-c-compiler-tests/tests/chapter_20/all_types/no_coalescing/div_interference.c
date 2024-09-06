@@ -1,21 +1,42 @@
-int glob = 3;
+/* Test that we recognize that div updates EAX.
+ * We won't examine the assembly output for this test case, we'll just make sure
+ * it behaves correctly.
+ * NOTE: this is only guaranteed to work as intended after we implement register
+ * coalescing.
+ *
+ * This test program is generated from templates/chapter_20_templates/division_interference.c.jinja
+ */
 
-int client(unsigned int a, unsigned int b, unsigned int c, unsigned int d, unsigned int e, unsigned int f, unsigned int g) {
-    return (a == 12 && b == 12 && c == (unsigned) -3 && d == 10 && e == (unsigned) -30 && f== 52 && g == 48);
-}
+#include "../../libraries/util.h"
+
+unsigned int glob = 3;
+
 int target(void) {
+    unsigned int dividend = glob * 16;
 
-    unsigned int tmp1 = glob * 16;
-    unsigned int a = tmp1 / 4; // div creates conflict b/t tmp1 and ax since tmp1 is still live
-    unsigned int b = glob * 4;
-    unsigned int c = glob - 6;
-    unsigned int d = glob + 7;
-    unsigned int e = d * c;
-    unsigned int f = tmp1 + 4;
-   return client(a, b,c,d,e,f,tmp1);
+    // div makes dividend interfere with EAX; we'll coalesce them unless we
+    // recognize that they interfere
 
+    /* mov    %dividend, %eax
+     * cdq
+     * div   $4 # update EAX, making it conflict with dividend,
+     *           # which is still live
+     */
+    unsigned int quotient = dividend / 4;
+
+    // save dividend so we can validate it later, making it live
+    // note that we do this instead of passing it as an argument
+    // to make sure it doesn't get coalesced into anything other than EAX
+    glob = dividend;
+
+    // validate quotient
+    check_one_int(quotient, 12);
+
+    return 0;
 }
 
 int main(void) {
-    return target();
+    target();
+    check_one_int(glob, 48);
+    return 0;
 }
