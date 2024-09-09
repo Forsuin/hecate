@@ -29,6 +29,12 @@ pub struct Decl {
 }
 
 #[derive(Debug, Eq, PartialEq, Clone)]
+pub enum ForInit {
+    Decl(Decl),
+    Expr(Option<Expr>),
+}
+
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub enum Stmt {
     Compound { block: Block },
     Return { expr: Expr },
@@ -36,6 +42,11 @@ pub enum Stmt {
     If { condition: Expr, then: Box<Stmt>, otherwise: Option<Box<Stmt>> },
     Goto { label: String},
     LabeledStmt { label: String, stmt: Box<Stmt>},
+    Break { label: String },
+    Continue { label: String },
+    While { condition: Expr, body: Box<Stmt>, label: String },
+    DoWhile { body: Box<Stmt>, condition: Expr, label: String },
+    For { init: ForInit, condition: Option<Expr>, post: Option<Expr>, body: Box<Stmt>, label: String },
     Null,
 }
 

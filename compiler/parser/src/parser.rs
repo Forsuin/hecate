@@ -252,6 +252,102 @@ impl Parser {
             ) => Ok(Stmt::Compound {
                 block: self.parse_block()?,
             }),
+            (
+                Some(Token {
+                    kind: TokenType::Break,
+                    ..
+                }),
+                _,
+            ) => {
+                self.expect(TokenType::Break)?;
+                self.expect(TokenType::Semicolon)?;
+                Ok(Stmt::Break {
+                    label: "".to_string(),
+                })
+            }
+            (
+                Some(Token {
+                    kind: TokenType::Continue,
+                    ..
+                }),
+                _,
+            ) => {
+                self.expect(TokenType::Continue)?;
+                self.expect(TokenType::Semicolon)?;
+                Ok(Stmt::Continue {
+                    label: "".to_string(),
+                })
+            }
+            (
+                Some(Token {
+                    kind: TokenType::While,
+                    ..
+                }),
+                _,
+            ) => {
+                self.expect(TokenType::While)?;
+                self.expect(TokenType::OpenParen)?;
+
+                let condition = self.parse_expr(0)?;
+
+                self.expect(TokenType::CloseParen)?;
+
+                let body = self.parse_stmt()?;
+
+                Ok(Stmt::While {
+                    condition,
+                    body: Box::from(body),
+                    label: "".to_string(),
+                })
+            }
+            (
+                Some(Token {
+                    kind: TokenType::Do,
+                    ..
+                }),
+                _,
+            ) => {
+                self.expect(TokenType::Do)?;
+
+                let body = self.parse_stmt()?;
+
+                self.expect(TokenType::While)?;
+                self.expect(TokenType::OpenParen)?;
+
+                let condition = self.parse_expr(0)?;
+
+                self.expect(TokenType::CloseParen)?;
+                self.expect(TokenType::Semicolon)?;
+
+                Ok(Stmt::DoWhile {
+                    body: Box::from(body),
+                    condition,
+                    label: "".to_string(),
+                })
+            }
+            (
+                Some(Token {
+                    kind: TokenType::For,
+                    ..
+                }),
+                _,
+            ) => {
+                self.expect(TokenType::For)?;
+                self.expect(TokenType::OpenParen)?;
+
+                let init = self.parse_for_init()?;
+                let condition = self.parse_optional_expr(TokenType::Semicolon)?;
+                let post = self.parse_optional_expr(TokenType::CloseParen)?;
+                let body = self.parse_stmt()?;
+
+                Ok(Stmt::For {
+                    init,
+                    condition,
+                    post,
+                    body: Box::from(body),
+                    label: "".to_string(),
+                })
+            }
             _ => {
                 let expr = Stmt::Expression {
                     expr: self.parse_expr(0)?,
@@ -259,6 +355,38 @@ impl Parser {
                 self.expect(TokenType::Semicolon)?;
                 Ok(expr)
             }
+        }
+    }
+
+    fn parse_for_init(&mut self) -> Result<ForInit, ParseError> {
+        match self.peek() {
+            Some(Token {
+                kind: TokenType::Int,
+                ..
+            }) => Ok(ForInit::Decl(self.parse_decl()?)),
+            Some(_) => Ok(ForInit::Expr(
+                self.parse_optional_expr(TokenType::Semicolon)?,
+            )),
+            _ => Err(ParseError::new(format!(
+                "Expect for-loop initializer, instead found {:#?}",
+                self.peek()
+            ))),
+        }
+    }
+
+    fn parse_optional_expr(&mut self, delim: TokenType) -> Result<Option<Expr>, ParseError> {
+        match self.peek() {
+            Some(token) => {
+                if token.kind == delim {
+                    self.expect(delim)?;
+                    Ok(None)
+                } else {
+                    let expr = self.parse_expr(0)?;
+                    self.expect(delim)?;
+                    Ok(Some(expr))
+                }
+            }
+            None => Err(ParseError::new("Unexpected end of file".to_string())),
         }
     }
 
@@ -920,6 +1048,67 @@ mod tests {
                         right: Box::new(Expr::Constant(4)),
                     }),
                 }),
+            }
+        )
+    }
+
+    #[test]
+    fn break_kw() {
+        let src = "do break; while(1);";
+        let tokens = Lexer::new(src).tokenize().collect();
+
+        let ast = Parser::new(tokens).parse_stmt().unwrap();
+
+        assert_eq!(
+            ast,
+            Stmt::DoWhile {
+                body: Box::new(Stmt::Break {
+                    label: "".to_string()
+                }),
+                condition: Expr::Constant(1),
+                label: "".to_string(),
+            }
+        )
+    }
+
+    #[test]
+    fn continue_kw() {
+        let src = "do continue; while(1);";
+        let tokens = Lexer::new(src).tokenize().collect();
+
+        let ast = Parser::new(tokens).parse_stmt().unwrap();
+
+        assert_eq!(
+            ast,
+            Stmt::DoWhile {
+                body: Box::new(Stmt::Continue {
+                    label: "".to_string()
+                }),
+                condition: Expr::Constant(1),
+                label: "".to_string(),
+            }
+        )
+    }
+
+    #[test]
+    fn while_stmt() {
+        let src = "while(x > 0) x--; ";
+        let tokens = Lexer::new(src).tokenize().collect();
+
+        let ast = Parser::new(tokens).parse_stmt().unwrap();
+
+        assert_eq!(
+            ast,
+            Stmt::While {
+                condition: Expr::Binary {
+                    op: BinaryOp::Greater,
+                    left: Box::new(Expr::Var("x".to_string())),
+                    right: Box::new(Expr::Constant(0)),
+                },
+                body: Box::new(Stmt::Expression {
+                    expr: Expr::PostfixDec(Box::new(Expr::Var("x".to_string()))),
+                }),
+                label: "".to_string(),
             }
         )
     }

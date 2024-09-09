@@ -118,6 +118,11 @@ pub enum TokenType {
     Void,
     Return,
     Goto,
+    Do,
+    While,
+    For,
+    Break,
+    Continue,
 
     // Informational
     Whitespace,
@@ -374,6 +379,11 @@ impl<'a> Lexer<'a> {
             "void" => TokenType::Void,
             "return" => TokenType::Return,
             "goto" => TokenType::Goto,
+            "do" => TokenType::Do,
+            "while" => TokenType::While,
+            "for" => TokenType::For,
+            "break" => TokenType::Break,
+            "continue" => TokenType::Continue,
             _ => TokenType::Identifier,
         }
     }
@@ -506,6 +516,18 @@ mod tests {
     fn label() {
         let src = "label: return 1;";
         let expected = vec![Identifier, Colon, Return, Constant, Semicolon];
+
+        let mut lexer = Lexer::new(src);
+        let tokens = lexer.tokenize();
+        let tokens: Vec<_> = tokens.map(|t| t.kind).collect();
+
+        assert_eq!(tokens, expected)
+    }
+
+    #[test]
+    fn loop_keywords() {
+        let src = "do while for break continue";
+        let expected = vec![Do, While, For, Break, Continue];
 
         let mut lexer = Lexer::new(src);
         let tokens = lexer.tokenize();
