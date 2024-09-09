@@ -1,4 +1,4 @@
-use ast::{BinaryOp, BlockItem, Expr, Stmt, UnaryOp};
+use ast::{BinaryOp, BlockItem, Expr, ForInit, Stmt, UnaryOp};
 use unique_ident::*;
 
 use crate::tacky;
@@ -36,19 +36,27 @@ fn tacky_block(block: ast::Block) -> Vec<Instruction> {
                     instructions.push(instruction);
                 }
             }
-            BlockItem::D(decl) => match decl.init {
-                Some(init) => {
-                    let (expr_instr, _) = tacky_expr(Expr::Assignment {
-                        lvalue: Box::new(Expr::Var(decl.name)),
-                        expr: Box::new(init),
-                    });
-                    for instruction in expr_instr {
-                        instructions.push(instruction);
-                    }
-                }
-                None => {}
-            },
+            BlockItem::D(decl) => {
+                instructions.append(&mut tacky_decl(decl));
+            }
         }
+    }
+
+    instructions
+}
+
+fn tacky_decl(decl: ast::Decl) -> Vec<Instruction> {
+    let mut instructions = vec![];
+
+    match decl.init {
+        Some(init) => {
+            let (mut expr_instr, _) = tacky_expr(Expr::Assignment {
+                lvalue: Box::new(Expr::Var(decl.name)),
+                expr: Box::new(init),
+            });
+            instructions.append(&mut expr_instr);
+        }
+        None => {}
     }
 
     instructions
@@ -110,6 +118,129 @@ fn tacky_stmt(stmt: ast::Stmt) -> Vec<tacky::Instruction> {
 
         Stmt::Compound { block } => {
             tacky_block(block)
+        }
+
+        Stmt::Break { label } => {
+            let mut instructions = vec![];
+
+            instructions.push(Instruction::Jump {
+                target: format!("break.{}", label)
+            });
+
+            instructions
+        }
+        Stmt::Continue { label } => {
+            let mut instructions = vec![];
+
+            instructions.push(Instruction::Jump {
+                target: format!("continue.{}", label)
+            });
+
+            instructions
+        }
+        Stmt::While { condition, body, label } => {
+            let mut instuctions = vec![];
+
+            let continue_label = format!("continue.{}", label);
+            let break_label = format!("break.{}", label);
+
+            let (mut cond_instr, cond) = tacky_expr(condition);
+
+            instuctions.push(Instruction::Label(continue_label.clone()));
+            instuctions.append(&mut cond_instr);
+            instuctions.push(Instruction::JumpIfZero {
+                condition: cond,
+                target: break_label.clone()
+            });
+
+            instuctions.append(&mut tacky_stmt(*body));
+
+            instuctions.push(Instruction::Jump {
+                target: continue_label.clone()
+            });
+
+            instuctions.push(Instruction::Label(break_label));
+
+            instuctions
+
+        }
+        Stmt::DoWhile { body, condition, label } => {
+            let mut instructions = vec![];
+            let start_label = make_label("do_start_loop");
+            let continue_label = format!("continue.{}", label);
+            let break_label = format!("break.{}", label);
+
+            instructions.push(Instruction::Label(start_label.clone()));
+            instructions.append(&mut tacky_stmt(*body));
+            instructions.push(Instruction::Label(continue_label));
+
+            let (mut cond_instr, cond) = tacky_expr(condition);
+
+            instructions.append(&mut cond_instr);
+            instructions.push(Instruction::JumpIfNotZero {
+                condition: cond,
+                target: start_label,
+            });
+            instructions.push(Instruction::Label(break_label));
+
+            instructions
+        }
+        Stmt::For { init, condition, post, body, label } => {
+            let mut instructions = vec![];
+            let start_label = make_label("for_start_loop");
+            let continue_label = format!("continue.{}", label);
+            let break_label = format!("break.{}", label);
+
+            match init {
+                ForInit::Decl(decl) => {
+                    instructions.append(&mut tacky_decl(decl));
+                }
+                ForInit::Expr(expr) => {
+                    match expr {
+                        Some(expr) => {
+                            instructions.append(&mut tacky_expr(expr).0);
+                        }
+                        None => {}
+                    }
+                }
+            }
+
+            instructions.push(Instruction::Label(start_label.clone()));
+
+            match condition {
+                Some(expr) => {
+                    let (mut cond_instr, cond) = tacky_expr(expr);
+
+                    instructions.append(&mut cond_instr);
+
+                    instructions.push(Instruction::JumpIfZero {
+                        condition: cond,
+                        target: break_label.clone(),
+                    });
+                }
+                None => {}
+            }
+
+            instructions.append(&mut tacky_stmt(*body));
+
+            instructions.push(Instruction::Label(continue_label.clone()));
+
+            match post {
+                Some(expr) => {
+                    let (mut post_instr, _) = tacky_expr(expr);
+
+                    instructions.append(&mut post_instr);
+                }
+                None => {}
+            }
+
+            instructions.push(Instruction::Jump {
+                target: start_label.clone()
+            });
+
+            instructions.push(Instruction::Label(break_label));
+
+            instructions
         }
     }
 

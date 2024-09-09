@@ -71,6 +71,18 @@ fn validate_stmt(stmt: &Stmt, defined: &mut LabelSet, used: &mut LabelSet)-> Res
 
             Ok(())
         }
-        Stmt::Return { .. } | Stmt::Null | Stmt::Expression { .. } => { Ok(()) }
+        Stmt::While { condition: _, body, label: _ } => {
+            validate_stmt(body, defined, used)?;
+            Ok(())
+        }
+        Stmt::DoWhile { body, condition: _, label: _ } => {
+            validate_stmt(body, defined, used)?;
+            Ok(())
+        }
+        Stmt::For { init: _, condition: _, post: _, body, label: _ } => {
+            validate_stmt(body, defined, used)?;
+            Ok(())
+        }
+        Stmt::Return { .. } | Stmt::Null | Stmt::Expression { .. } | Stmt::Break { .. } | Stmt::Continue { .. } => { Ok(()) }
     }
 }

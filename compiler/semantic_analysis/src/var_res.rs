@@ -46,7 +46,7 @@ fn resolve_block_item(item: &mut BlockItem, var_map: &mut VarMap) -> Result<(), 
 
 fn resolve_decl(decl: &mut Decl, var_map: &mut VarMap) -> Result<(), SemErr> {
     if var_map.contains_key(&decl.name) && var_map.get(&decl.name).unwrap().from_current_block {
-        return Err(SemErr::new(format!("Duplicate variable declaration")));
+        return Err(SemErr::new(format!("Duplicate variable declaration found: {:#?}", decl.name)));
     } else {
         let unique_name = make_temp_name(&decl.name);
         var_map.insert(
@@ -92,11 +92,48 @@ fn resolve_stmt(stmt: &mut Stmt, var_map: &VarMap) -> Result<(), SemErr> {
         Stmt::LabeledStmt { label: _, stmt } =>  {
             resolve_stmt(stmt, var_map)?;
         },
-
         Stmt::Compound { block } => {
             let mut new_map = copy_var_map(var_map);
             resolve_block(block, &mut new_map)?;
         }
+        Stmt::Break { .. } => {}
+        Stmt::Continue { .. } => {}
+        Stmt::While { condition, body, label: _ } => {
+            resolve_expr(condition, var_map)?;
+            resolve_stmt(body, var_map)?;
+        }
+        Stmt::DoWhile { body, condition, label: _ } => {
+            resolve_stmt(body, var_map)?;
+            resolve_expr(condition, var_map)?;
+        }
+        Stmt::For { init, condition, post, body, label: _ } => {
+            let mut var_map = copy_var_map(var_map);
+
+            resolve_for_init(init, &mut var_map)?;
+            resolve_optional_expr(condition, &mut var_map)?;
+            resolve_optional_expr(post, &mut  var_map)?;
+            resolve_stmt(body, &mut var_map)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn resolve_for_init(init: &mut ForInit, var_map: &mut VarMap) -> Result<(), SemErr> {
+    match init {
+        ForInit::Decl(decl) => resolve_decl(decl, var_map)?,
+        ForInit::Expr(expr) => resolve_optional_expr(expr, var_map)?
+    }
+
+    Ok(())
+}
+
+fn resolve_optional_expr(expr: &mut Option<Expr>, var_map: &VarMap) -> Result<(), SemErr> {
+    match expr {
+        Some(expr) => {
+            resolve_expr(expr, var_map)?
+        },
+        None => {}
     }
 
     Ok(())

@@ -10,7 +10,7 @@ use emission::output;
 use lexer::{Lexer, TokenType};
 use mir::gen_tacky;
 use parser::Parser;
-use semantic_analysis::{resolve, validate_labels};
+use semantic_analysis::{label_loops, resolve, validate_labels};
 
 #[derive(ClapParser, Debug)]
 #[command(version, about, long_about = "Runs the Hecate C compiler")]
@@ -201,6 +201,8 @@ fn compile(path: &str, stop_stage: &Option<StopStage>, assm_path: &str) -> Resul
     resolve(&mut ast)?;
 
     validate_labels(&ast)?;
+
+    label_loops(&mut ast)?;
 
     // println!("RESOLVED AST:\n{:#?}", ast);
 
