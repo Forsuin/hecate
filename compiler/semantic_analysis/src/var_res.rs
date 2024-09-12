@@ -114,6 +114,20 @@ fn resolve_stmt(stmt: &mut Stmt, var_map: &VarMap) -> Result<(), SemErr> {
             resolve_optional_expr(post, &mut  var_map)?;
             resolve_stmt(body, &mut var_map)?;
         }
+        Stmt::Switch { control, body, label: _ } => {
+            resolve_expr(control, var_map)?;
+
+            let mut var_map = copy_var_map(var_map);
+
+            resolve_stmt(body, &mut var_map)?;
+        }
+        Stmt::Case { constant, body, label: _ } => {
+            resolve_expr(constant, var_map)?;
+            resolve_stmt(body, var_map)?;
+        }
+        Stmt::Default { body, label: _ } => {
+            resolve_stmt(body, var_map)?;
+        }
     }
 
     Ok(())

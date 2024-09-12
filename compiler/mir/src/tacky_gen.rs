@@ -3,7 +3,7 @@ use unique_ident::*;
 
 use crate::tacky;
 use crate::tacky::{Instruction, Val};
-use crate::tacky::Instruction::Jump;
+use crate::tacky::Instruction::{Jump, JumpIfNotZero};
 
 pub fn gen_tacky(ast: ast::TranslationUnit) -> tacky::TranslationUnit {
     match ast {
@@ -239,6 +239,27 @@ fn tacky_stmt(stmt: ast::Stmt) -> Vec<tacky::Instruction> {
             });
 
             instructions.push(Instruction::Label(break_label));
+
+            instructions
+        }
+        Stmt::Switch { control, body, label } => {
+            tacky_switch(control, *body, label)
+        }
+        Stmt::Case { constant: _, body, label } => {
+            let mut instructions = vec![];
+
+            instructions.push(Instruction::Label(label));
+
+            instructions.append(& mut tacky_stmt(*body));
+
+            instructions
+        }
+        Stmt::Default { body, label } => {
+            let mut instructions = vec![];
+
+            instructions.push(Instruction::Label(label));
+
+            instructions.append(& mut tacky_stmt(*body));
 
             instructions
         }
@@ -527,4 +548,111 @@ fn tacky_compound_expression(op: BinaryOp, lvalue: Expr, rhs: Expr) -> (Vec<Inst
     });
 
     (instructions, dest)
+}
+
+fn tacky_switch(control: Expr, body: Stmt, label: String) -> Vec<Instruction> {
+    let cases = gather_cases(&body);
+
+    let break_label = format!("break.{}", label);
+    let (control_instr, control) = tacky_expr(control);
+    let cmp_result = Val::Var(make_temp());
+
+    let gen_tacky_case_jump = |(key, label): &(Option<i32>, String) | {
+        match key {
+            Some(c) => vec![
+                Instruction::Binary {
+                    op: tacky::BinaryOp::Equal,
+                    first: Val::Constant(*c),
+                    second: control.clone(),
+                    dest: cmp_result.clone(),
+                },
+                JumpIfNotZero {
+                    condition: cmp_result.clone(),
+                    target: label.clone(),
+                }
+            ],
+            None => vec![]
+        }
+    };
+
+    let tacky_case_jumps: Vec<Instruction> = cases.iter().flat_map(gen_tacky_case_jump).collect();
+
+    let tacky_default_jump = if cases.iter().any(|(key, _)| key.is_none()) {
+        let default_id = cases.iter()
+            .find(|(key, _) | key.is_none())
+            .map(|(_, id)| id.clone())
+            .expect("Default case label not found");
+        vec![Jump {
+            target: default_id,
+        }]
+    }
+    else {
+        vec![]
+    };
+
+    control_instr.into_iter()
+        .chain(tacky_case_jumps)
+        .chain(tacky_default_jump)
+        .chain(vec![Jump {
+            target: break_label.clone(),
+        }])
+        .chain(tacky_stmt(body))
+        .chain(vec![Instruction::Label(break_label)])
+        .collect()
+}
+
+fn gather_cases(stmt: &Stmt) -> Vec<(Option<i32>, String)> {
+    let mut cases = vec![];
+
+    gather_cases_helper(stmt, &mut cases);
+
+    cases
+}
+
+fn gather_cases_helper(stmt: &Stmt, cases: &mut Vec<(Option<i32>, String)>) {
+    match stmt {
+        Stmt::Compound { block } => {
+            for item in &block.items {
+                match item {
+                    BlockItem::S(stmt) => gather_cases_helper(stmt, cases),
+                    _ => {}
+                }
+            }
+        }
+        Stmt::If { condition: _, then, otherwise } => {
+            gather_cases_helper(then, cases);
+
+            if let Some(otherwise) = otherwise {
+                gather_cases_helper(otherwise, cases);
+            }
+        }
+
+        Stmt::LabeledStmt { label: _, stmt } => {
+            gather_cases_helper(stmt, cases);
+        }
+
+        Stmt::While { condition: _, body, label: _ } => {
+            gather_cases_helper(body, cases);
+        }
+        Stmt::DoWhile { body, condition: _, label: _ } => {
+            gather_cases_helper(body, cases);
+        }
+        Stmt::For { init: _, condition: _, post: _, body, label: _ } => {
+            gather_cases_helper(body, cases);
+        }
+
+        Stmt::Case { constant, body, label } => {
+            if let Expr::Constant(c) = constant {
+                cases.push((Some(*c), label.clone()));
+                gather_cases_helper(body, cases);
+            }
+            else {
+                unreachable!("Tacky Gen, case expr is non-constant value");
+            }
+        }
+        Stmt::Default { body: _, label } => {
+            cases.push((None, label.clone()));
+        }
+        Stmt::Switch { .. } | Stmt::Continue { .. } | Stmt::Break { .. } | Stmt::Goto { .. } | Stmt::Expression { .. } | Stmt::Return { .. } | Stmt::Null => {}
+    }
 }

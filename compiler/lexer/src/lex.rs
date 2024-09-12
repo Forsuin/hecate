@@ -123,6 +123,9 @@ pub enum TokenType {
     For,
     Break,
     Continue,
+    Switch,
+    Case,
+    Default,
 
     // Informational
     Whitespace,
@@ -384,6 +387,9 @@ impl<'a> Lexer<'a> {
             "for" => TokenType::For,
             "break" => TokenType::Break,
             "continue" => TokenType::Continue,
+            "switch" => TokenType::Switch,
+            "case" => TokenType::Case,
+            "default" => TokenType::Default,
             _ => TokenType::Identifier,
         }
     }
@@ -528,6 +534,18 @@ mod tests {
     fn loop_keywords() {
         let src = "do while for break continue";
         let expected = vec![Do, While, For, Break, Continue];
+
+        let mut lexer = Lexer::new(src);
+        let tokens = lexer.tokenize();
+        let tokens: Vec<_> = tokens.map(|t| t.kind).collect();
+
+        assert_eq!(tokens, expected)
+    }
+
+    #[test]
+    fn switch_case_keywords() {
+        let src = "switch case default";
+        let expected = vec![Switch, Case, Default];
 
         let mut lexer = Lexer::new(src);
         let tokens = lexer.tokenize();

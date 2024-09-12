@@ -8,7 +8,7 @@ pub struct TranslationUnit {
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct Func {
     pub ident: String,
-    pub body: Block
+    pub body: Block,
 }
 
 #[derive(Debug, Eq, PartialEq, Clone)]
@@ -36,17 +36,64 @@ pub enum ForInit {
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub enum Stmt {
-    Compound { block: Block },
-    Return { expr: Expr },
-    Expression { expr: Expr },
-    If { condition: Expr, then: Box<Stmt>, otherwise: Option<Box<Stmt>> },
-    Goto { label: String},
-    LabeledStmt { label: String, stmt: Box<Stmt>},
-    Break { label: String },
-    Continue { label: String },
-    While { condition: Expr, body: Box<Stmt>, label: String },
-    DoWhile { body: Box<Stmt>, condition: Expr, label: String },
-    For { init: ForInit, condition: Option<Expr>, post: Option<Expr>, body: Box<Stmt>, label: String },
+    Compound {
+        block: Block,
+    },
+    Return {
+        expr: Expr,
+    },
+    Expression {
+        expr: Expr,
+    },
+    If {
+        condition: Expr,
+        then: Box<Stmt>,
+        otherwise: Option<Box<Stmt>>,
+    },
+    Goto {
+        label: String,
+    },
+    LabeledStmt {
+        label: String,
+        stmt: Box<Stmt>,
+    },
+    Break {
+        label: String,
+    },
+    Continue {
+        label: String,
+    },
+    While {
+        condition: Expr,
+        body: Box<Stmt>,
+        label: String,
+    },
+    DoWhile {
+        body: Box<Stmt>,
+        condition: Expr,
+        label: String,
+    },
+    For {
+        init: ForInit,
+        condition: Option<Expr>,
+        post: Option<Expr>,
+        body: Box<Stmt>,
+        label: String,
+    },
+    Switch {
+        control: Expr,
+        body: Box<Stmt>,
+        label: String,
+    },
+    Case {
+        constant: Expr,
+        body: Box<Stmt>,
+        label: String,
+    },
+    Default {
+        body: Box<Stmt>,
+        label: String,
+    },
     Null,
 }
 

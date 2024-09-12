@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use ast::*;
 
-use crate::sem_err::SemErr;
+use crate::sem_err::*;
 
 pub fn validate_labels(program: &TranslationUnit) -> Result<(), SemErr> {
     Ok(validate_func(&program.func)?)
@@ -83,6 +83,20 @@ fn validate_stmt(stmt: &Stmt, defined: &mut LabelSet, used: &mut LabelSet)-> Res
             validate_stmt(body, defined, used)?;
             Ok(())
         }
+
+        Stmt::Switch { control: _, body , label: _ } => {
+            validate_stmt(body, defined, used)?;
+            Ok(())
+        }
+        Stmt::Case { constant: _, body, label: _ } => {
+            validate_stmt(body, defined, used)?;
+            Ok(())
+        }
+        Stmt::Default { body, label: _ } => {
+            validate_stmt(body, defined, used)?;
+            Ok(())
+        }
+
         Stmt::Return { .. } | Stmt::Null | Stmt::Expression { .. } | Stmt::Break { .. } | Stmt::Continue { .. } => { Ok(()) }
     }
 }

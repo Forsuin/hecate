@@ -348,6 +348,66 @@ impl Parser {
                     label: "".to_string(),
                 })
             }
+            (
+                Some(Token {
+                    kind: TokenType::Switch,
+                    ..
+                }),
+                _,
+            ) => {
+                self.expect(TokenType::Switch)?;
+                self.expect(TokenType::OpenParen)?;
+
+                let control = self.parse_expr(0)?;
+
+                self.expect(TokenType::CloseParen)?;
+
+                let body = self.parse_stmt()?;
+
+                Ok(Stmt::Switch {
+                    control,
+                    body: Box::from(body),
+                    label: "".to_string()
+                })
+            }
+            (
+                Some(Token {
+                    kind: TokenType::Case,
+                    ..
+                }),
+                _,
+            ) => {
+                self.expect(TokenType::Case)?;
+
+                let constant = self.parse_expr(0)?;
+
+                self.expect(TokenType::Colon)?;
+
+                let body = self.parse_stmt()?;
+
+                Ok(Stmt::Case {
+                    constant,
+                    body: Box::from(body),
+                    label: "".to_string()
+                })
+            }
+            (
+                Some(Token {
+                         kind: TokenType::Default,
+                         ..
+                     }),
+                _,
+            ) => {
+                self.expect(TokenType::Default)?;
+                self.expect(TokenType::Colon)?;
+
+                let body = self.parse_stmt()?;
+
+                Ok(Stmt::Default {
+                    body: Box::from(body),
+                    label: "".to_string()
+                })
+            }
             _ => {
                 let expr = Stmt::Expression {
                     expr: self.parse_expr(0)?,
@@ -753,6 +813,51 @@ mod tests {
 
     use super::*;
 
+    macro_rules! stmt_item {
+        ($stmt:expr) => {
+            BlockItem::S($stmt)
+        };
+    }
+
+    macro_rules! decl_item {
+        ($decl:expr) => {
+            BlockItem::D($decl)
+        };
+    }
+
+    macro_rules! case {
+        ($constant:expr, $body:expr) => {
+            Stmt::Case {
+                constant: $constant,
+                body: Box::new($body),
+                label: "".to_string()
+            }
+        };
+    }
+
+    macro_rules! const_expr {
+        ($expr:expr) => {
+            Expr::Constant($expr)
+        };
+    }
+
+    macro_rules! break_stmt {
+        () => {
+            Stmt::Break {
+                label: "".to_string(),
+            }
+        };
+    }
+
+    macro_rules! default {
+        ($body:expr) => {
+            Stmt::Default {
+                body: Box::new($body),
+                label: "".to_string()
+            }
+        };
+    }
+
     #[test]
     fn simple_add() {
         let src = "3 + 5";
@@ -1109,6 +1214,31 @@ mod tests {
                     expr: Expr::PostfixDec(Box::new(Expr::Var("x".to_string()))),
                 }),
                 label: "".to_string(),
+            }
+        )
+    }
+
+    #[test]
+    fn switch_stmt() {
+        let src = "switch(x) { case 1: break; case 4: break; default: break; }";
+        let tokens = Lexer::new(src).tokenize().collect();
+
+        let ast = Parser::new(tokens).parse_stmt().unwrap();
+
+        assert_eq!(
+            ast,
+            Stmt::Switch {
+                control: Expr::Var("x".to_string()),
+                body: Box::new(Stmt::Compound {
+                    block: Block {
+                        items: vec![
+                            stmt_item!(case!(const_expr!(1), break_stmt!())),
+                            stmt_item!(case!(const_expr!(4), break_stmt!())),
+                            stmt_item!(default!(break_stmt!()))
+                        ]
+                    }
+                }),
+                label: "".to_string()
             }
         )
     }
