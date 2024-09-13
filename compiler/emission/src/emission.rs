@@ -4,6 +4,7 @@ use std::io::{BufWriter, Write};
 use lir::*;
 
 pub fn output(path: &str, assm: Program) -> std::io::Result<()> {
+
     let output = File::create(path)?;
     let mut writer = BufWriter::new(output);
 
@@ -20,6 +21,7 @@ pub fn output(path: &str, assm: Program) -> std::io::Result<()> {
 }
 
 fn emit_func<W: Write>(writer: &mut W, func: Function) -> std::io::Result<()> {
+    writeln!(writer, "# <function: {}>", func.name)?;
     writeln!(writer, "\t.globl {}", func.name)?;
     writeln!(writer, "{}:", func.name)?;
     writeln!(writer, "\tpushq %rbp")?;
@@ -34,48 +36,69 @@ fn emit_func<W: Write>(writer: &mut W, func: Function) -> std::io::Result<()> {
 
 fn emit_instruction<W: Write>(writer: &mut W, instruction: Instruction) -> std::io::Result<()> {
     match instruction {
-        Instruction::Mov { src, dest } => writeln!(
-            writer,
-            "\tmovl {}, {}",
-            show_operand(src),
-            show_operand(dest)
-        )?,
+        Instruction::Mov { src, dest } => {
+            writeln!(
+                writer,
+                "\tmovl {}, {}",
+                show_operand(src),
+                show_operand(dest)
+            )?
+        }
         Instruction::Ret => {
+            writeln!(writer, "\n# <return>")?;
             writeln!(writer, "\tmovq %rbp, %rsp")?;
             writeln!(writer, "\tpopq %rbp")?;
             writeln!(writer, "\tret")?
-        },
-        Instruction::Unary {op, dest} => {
+        }
+        Instruction::Unary { op, dest } => {
             writeln!(writer, "\t{} {}", show_unary(op), show_operand(dest))?;
-        },
+        }
         Instruction::AllocateStack(amt) => {
             writeln!(writer, "\tsubq ${}, %rsp", amt)?;
-        },
+        }
 
         Instruction::Binary { op, src, dest } => {
-            writeln!(writer, "\t{} {}, {}", show_binary(op), show_operand(src), show_operand(dest))?;
+            writeln!(writer, "# <{:?} {:?} {:?}>", src, op, dest)?;
+            writeln!(
+                writer,
+                "\t{} {}, {}",
+                show_binary(op),
+                show_operand(src),
+                show_operand(dest)
+            )?;
         }
         Instruction::Idiv(op) => {
             writeln!(writer, "\tidivl {}", show_operand(op))?;
         }
         Instruction::Cdq => {
             writeln!(writer, "\tcdq")?;
-        },
+        }
 
         Instruction::Cmp(first, second) => {
-            writeln!(writer, "\tcmpl {}, {}", show_operand(first), show_operand(second))?;
+            writeln!(
+                writer,
+                "\tcmpl {}, {}",
+                show_operand(first),
+                show_operand(second)
+            )?;
         }
         Instruction::Jmp { label } => {
-            writeln!(writer, "\tjmp .L{}", label)?;
+            writeln!(writer, "\tjmp .L_{}", label)?;
         }
         Instruction::JmpCond { condition, label } => {
-            writeln!(writer, "\tj{} .L{}", show_condition(condition), label)?;
+            writeln!(writer, "\tj{} .L_{}", show_condition(condition), label)?;
         }
         Instruction::SetCond { condition, dest } => {
-            writeln!(writer, "\tset{} {}", show_condition(condition), show_byte_operand(dest))?;
+            writeln!(
+                writer,
+                "\tset{} {}",
+                show_condition(condition),
+                show_byte_operand(dest)
+            )?;
         }
         Instruction::Label(label) => {
-            writeln!(writer, ".L{}:", label)?;
+            writeln!(writer, "# <Label: {}>", label)?;
+            writeln!(writer, ".L_{}:", label)?;
         }
     }
 
@@ -104,26 +127,31 @@ fn show_binary(op: BinaryOp) -> String {
 
 fn show_byte_operand(op: Operand) -> String {
     match op {
-        Operand::Register(Register::AX) => format!("%{}","al"),
-        Operand::Register(Register::DX) => format!("%{}","dl"),
-        Operand::Register(Register::R10) => format!("%{}","r10b"),
-        Operand::Register(Register::R11) => format!("%{}","r11b"),
-        _ => show_operand(op)
+        Operand::Register(Register::AX) => format!("%{}", "al"),
+        Operand::Register(Register::DX) => format!("%{}", "dl"),
+        Operand::Register(Register::R10) => format!("%{}", "r10b"),
+        Operand::Register(Register::R11) => format!("%{}", "r11b"),
+        _ => show_operand(op),
     }
 }
 
 fn show_operand(op: Operand) -> String {
     match op {
-        Operand::Register(reg) => format!("%{}", match reg {
-            Register::AX => "eax",
-            Register::CX => "ecx",
-            Register::DX => "edx",
-            Register::R10 => "r10d",
-            Register::R11 => "r11d",
-        }),
+        Operand::Register(reg) => format!(
+            "%{}",
+            match reg {
+                Register::AX => "eax",
+                Register::CX => "ecx",
+                Register::DX => "edx",
+                Register::R10 => "r10d",
+                Register::R11 => "r11d",
+            }
+        ),
         Operand::Stack(amt) => format!("{}(%rbp)", -amt),
         Operand::Imm(val) => format!("${}", val),
-        Operand::Pseudo(_) => panic!("No Pseudo-registers should be in tree when outputing assembly"),
+        Operand::Pseudo(_) => {
+            panic!("No Pseudo-registers should be in tree when outputing assembly")
+        }
     }
 }
 
