@@ -8,9 +8,9 @@ use thiserror::Error;
 use codegen::gen_assm;
 use emission::output;
 use lexer::{Lexer, TokenType};
-use mir::gen_tacky;
+use mir::{debug_tacky, gen_tacky};
 use parser::Parser;
-use semantic_analysis::{label_loops, resolve, validate_labels};
+use semantic_analysis::{analyze_switches, label_loops, resolve, validate_labels};
 
 #[derive(ClapParser, Debug)]
 #[command(version, about, long_about = "Runs the Hecate C compiler")]
@@ -50,6 +50,10 @@ struct StageOptions {
     /// Emit assembly file, but do not assemble or link it
     #[arg(short = 'S')]
     s: bool,
+
+    /// Write out tacky code
+    #[arg(short = 'd')]
+    debug: bool
 }
 
 /// Which stage the compiler should stop at
@@ -89,10 +93,10 @@ pub fn main() -> Result<()> {
 
     let stop_stage = StopStage::from_args(&args.stage_options);
 
-    run_driver(&args.path, &stop_stage)
+    run_driver(&args.path, &stop_stage, args.stage_options.debug)
 }
 
-fn run_driver(path: &str, stop_stage: &Option<StopStage>) -> Result<()> {
+fn run_driver(path: &str, stop_stage: &Option<StopStage>, debug: bool) -> Result<()> {
     let dir_path = Path::new(path);
 
     // source code should always be inside a directory, but better error handling can come later
@@ -118,7 +122,7 @@ fn run_driver(path: &str, stop_stage: &Option<StopStage>) -> Result<()> {
         .expect("Failed to execute preprocessor process");
 
     // compile
-    compile(&pp_name, stop_stage, &assembly_path)?;
+    compile(&pp_name, stop_stage, &assembly_path, debug)?;
 
     //delete preprocessed file
     Command::new("rm")
@@ -155,7 +159,7 @@ fn run_driver(path: &str, stop_stage: &Option<StopStage>) -> Result<()> {
 /// Actually run our compiler stages: Lexer, Parser, Codegen
 /// If no StopStage is specified, an assembly file is outputted with a ".s" extension
 /// Only Lexer, Parser, and Codegen StopStages are used in this function
-fn compile(path: &str, stop_stage: &Option<StopStage>, assm_path: &str) -> Result<()> {
+fn compile(path: &str, stop_stage: &Option<StopStage>, assm_path: &str, debug: bool) -> Result<()> {
     // This function will be responsible for actually deciding whether to output any files
 
     let source =
@@ -204,6 +208,8 @@ fn compile(path: &str, stop_stage: &Option<StopStage>, assm_path: &str) -> Resul
 
     label_loops(&mut ast)?;
 
+    analyze_switches(&mut ast)?;
+
     // println!("RESOLVED AST:\n{:#?}", ast);
 
     if let Some(StopStage::Analysis) = stop_stage {
@@ -211,6 +217,15 @@ fn compile(path: &str, stop_stage: &Option<StopStage>, assm_path: &str) -> Resul
     }
 
     let tacky = gen_tacky(ast);
+
+    if debug {
+        println!("Assm Path: {}", assm_path);
+
+        let tacky_name: Vec<_> = assm_path.split(".s").collect();
+        let tacky_name = format!("{}.tacky", tacky_name.get(0).unwrap());
+
+        debug_tacky(&tacky, tacky_name)?;
+    }
 
     // println!("TACKY:\n{:#?}", tacky);
 
