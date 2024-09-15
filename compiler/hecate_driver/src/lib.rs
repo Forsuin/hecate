@@ -16,17 +16,21 @@ use semantic_analysis::{analyze_switches, label_loops, resolve, validate_labels}
 #[command(version, about, long_about = "Runs the Hecate C compiler")]
 struct CLI {
     /// Path to C source file
-    path: String,
+    paths: Vec<String>,
 
     /// "Specifies a point in compilation process for Hecate to stop, only one(1) option can be specified at a time"
     #[command(flatten)]
-    stage_options: StageOptions,
+    stage_options: Options,
+
+    /// Specify name for outputted object file
+    #[arg(short = 'o', required = false)]
+    name: Option<String>,
 }
 
 /// Run C compiler with optional arguments
 #[derive(Args, Debug)]
 #[group(required = false, multiple = false)]
-struct StageOptions {
+struct Options {
     /// Stop after lexer
     #[arg(long)]
     lex: bool,
@@ -52,11 +56,16 @@ struct StageOptions {
     s: bool,
 
     /// Write out tacky code
-    #[arg(short = 'd')]
-    debug: bool
+    #[arg(short = 'd', required = false)]
+    debug: bool,
+
+    /// Compile and assemble into object file, but do not link
+    #[arg(short = 'c')]
+    c: bool,
 }
 
 /// Which stage the compiler should stop at
+#[derive(Eq, PartialEq, Copy, Clone)]
 enum StopStage {
     Lexer,
     Parser,
@@ -64,94 +73,129 @@ enum StopStage {
     Assembler,
     Tacky,
     Analysis,
+    Object,
 }
 
 impl StopStage {
-    fn from_args(options: &StageOptions) -> Option<StopStage> {
-        if options.lex {
-            return Some(StopStage::Lexer);
+    fn from_args(options: &Options) -> Option<StopStage> {
+        return if options.lex {
+            Some(StopStage::Lexer)
         } else if options.parse {
-            return Some(StopStage::Parser);
+            Some(StopStage::Parser)
         } else if options.codegen {
-            return Some(StopStage::CodeGen);
+            Some(StopStage::CodeGen)
         } else if options.s {
-            return Some(StopStage::Assembler);
+            Some(StopStage::Assembler)
         } else if options.tacky {
-            return Some(StopStage::Tacky);
-        }
-        else if options.validate {
-            return Some(StopStage::Analysis)
-        }
-        else {
-            return None;
-        }
+            Some(StopStage::Tacky)
+        } else if options.validate {
+            Some(StopStage::Analysis)
+        } else if options.c {
+            Some(StopStage::Object)
+        } else {
+            None
+        };
     }
 }
 
 pub fn main() -> Result<()> {
     let args = CLI::parse();
 
-    let stop_stage = StopStage::from_args(&args.stage_options);
-
-    run_driver(&args.path, &stop_stage, args.stage_options.debug)
+    run_driver(&args.paths, &args, args.stage_options.debug)
 }
 
-fn run_driver(path: &str, stop_stage: &Option<StopStage>, debug: bool) -> Result<()> {
-    let dir_path = Path::new(path);
+fn run_driver(paths: &Vec<String>, options: &CLI, debug: bool) -> Result<()> {
+    let stop_stage = StopStage::from_args(&options.stage_options);
 
-    // source code should always be inside a directory, but better error handling can come later
-    let dir = dir_path.parent().unwrap();
-    let file_name = dir_path
+    let mut object_names = vec![];
+
+    for path in paths {
+        let dir_path = Path::new(path);
+
+        // source code should always be inside a directory, but better error handling can come later
+        let dir = dir_path.parent().unwrap();
+        let file_name = dir_path
+            .file_stem()
+            .unwrap()
+            .to_owned()
+            .into_string()
+            .unwrap();
+
+        let pp_name = format!("{}/{file_name}.i", dir.display());
+        let assembly_path = format!("{}/{file_name}.s", dir.display());
+
+        // Preprocess input
+        Command::new("gcc")
+            .arg("-E")
+            .arg("-P")
+            .arg(dir_path)
+            .arg("-o")
+            .arg(&pp_name)
+            .output()
+            .expect("Failed to execute preprocessor process");
+
+        // compile
+        compile(&pp_name, &stop_stage, &assembly_path, debug)?;
+
+        //delete preprocessed file
+        Command::new("rm")
+            .arg(&pp_name)
+            .output()
+            .expect("Failed to delete preprocessed file");
+
+        // Assemble only if we don't stop during compilation
+        let object_path = format!("{}/{file_name}.o", dir.display());
+
+        // Assemble but don't link
+        let output = Command::new("gcc")
+            .arg("-c")
+            .arg(&assembly_path)
+            .arg("-o")
+            .arg(&object_path)
+            .output()
+            .expect("Failed to execute assembler");
+
+        std::io::stdout().write_all(&output.stdout).unwrap();
+        std::io::stderr().write_all(&output.stderr).unwrap();
+
+        object_names.push(object_path.clone());
+    }
+
+    if options.stage_options.c {
+        return Ok(())
+    }
+
+    let path_string = paths.first().unwrap().clone();
+
+    let path = Path::new(&path_string);
+    let dir = path.parent().unwrap();
+    let file_name = path
         .file_stem()
         .unwrap()
         .to_owned()
         .into_string()
         .unwrap();
 
-    let pp_name = format!("{}/{file_name}.i", dir.display());
-    let assembly_path = format!("{}/{file_name}.s", dir.display());
-
-    // Preprocess input
-    Command::new("gcc")
-        .arg("-E")
-        .arg("-P")
-        .arg(dir_path)
+    // actually link the object file(s) together
+    let output = Command::new("gcc")
         .arg("-o")
-        .arg(&pp_name)
+        .arg(
+            if let Some(name) = options.name.clone() {
+                format!("{}/{name}", dir.display())
+            }
+            else if paths.len() == 1 {
+                format!("{}/{}", dir.display(), file_name)
+            }
+            else {
+                format!("{}/a.out", dir.display())
+            }
+        )
+        .arg(object_names.join(", "))
         .output()
-        .expect("Failed to execute preprocessor process");
+        .expect("Failed to link files together");
 
-    // compile
-    compile(&pp_name, stop_stage, &assembly_path, debug)?;
-
-    //delete preprocessed file
-    Command::new("rm")
-        .arg(&pp_name)
-        .output()
-        .expect("Failed to delete preprocessed file");
-
-    // Assemble and link only if we don't stop during compilation
-    if let Some(_) = stop_stage {
-    } else {
-        let output = format!("{}/{file_name}", dir.display());
-
-        // Assemble and link
-        let output = Command::new("gcc")
-            .arg(&assembly_path)
-            .arg("-o")
-            .arg(&output)
-            .output()
-            .expect("Failed to execute assembler and linker");
-
-        std::io::stdout().write_all(&output.stdout).unwrap();
-        std::io::stderr().write_all(&output.stderr).unwrap();
-
-        //delete assembled file
-        // Command::new("rm")
-        //     .arg(&assembly_path)
-        //     .output()
-        //     .expect("Failed to delete assembly file");
-    }
+    std::io::stdout().write_all(&output.stdout).unwrap();
+    std::io::stderr().write_all(&output.stderr).unwrap();
 
     Ok(())
 }
@@ -186,7 +230,8 @@ fn compile(path: &str, stop_stage: &Option<StopStage>, assm_path: &str, debug: b
         }
 
         return Err(CompileErr::Lexer(error_msgs).into());
-    } else {}
+    } else {
+    }
 
     if let Some(StopStage::Lexer) = stop_stage {
         // tokenize() should have returned any error by now
