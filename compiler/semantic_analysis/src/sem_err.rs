@@ -17,3 +17,5 @@ impl SemErr {
         Self { message }
     }
 }
+
+pub type SemanticResult<T> = Result<T, SemErr>;
