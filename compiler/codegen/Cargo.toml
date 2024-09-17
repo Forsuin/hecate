@@ -4,5 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-mir = {path = "../mir"}
-lir = {path = "../lir"}
+mir = { path = "../mir" }
+lir = { path = "../lir" }
+ty = { path = "../ty" }

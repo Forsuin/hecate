@@ -2,11 +2,11 @@
 
 #[derive(Debug, Clone)]
 pub struct Program {
-    pub func: Function,
+    pub funcs: Vec<Func>,
 }
 
 #[derive(Debug, Clone)]
-pub struct Function {
+pub struct Func {
     pub name: String,
     pub instructions: Vec<Instruction>,
 }
@@ -42,6 +42,9 @@ pub enum Instruction {
     Label(String),
     Cdq,
     AllocateStack(i32),
+    DeallocateStack(i32),
+    Push(Operand),
+    Call(String),
     Ret,
 }
 
@@ -76,6 +79,10 @@ pub enum Register {
     AX,
     CX,
     DX,
+    DI,
+    SI,
+    R8,
+    R9,
     R10,
     R11,
 }

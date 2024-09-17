@@ -8,11 +8,19 @@ use crate::sem_err::*;
 type CaseMap = HashMap<Option<i32>, String>;
 
 pub fn analyze_switches(program: &mut TranslationUnit) -> SemanticResult<()> {
-    Ok(analyze_func(&mut program.func))?
+    for func in &mut program.funcs {
+        analyze_func(func)?
+    }
+
+    Ok(())
 }
 
-fn analyze_func(func: &mut Func) -> SemanticResult<()> {
-    Ok(analyze_block(&mut func.body, &mut None)?)
+fn analyze_func(func: &mut FuncDecl) -> SemanticResult<()> {
+    if let Some(body) = &mut func.body {
+        analyze_block(body, &mut None)?
+    }
+
+    Ok(())
 }
 
 fn analyze_block(block: &mut Block, case_map: &mut Option<CaseMap>) -> SemanticResult<()> {

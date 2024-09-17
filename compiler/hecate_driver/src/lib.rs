@@ -7,10 +7,11 @@ use thiserror::Error;
 
 use codegen::gen_assm;
 use emission::output;
+// use emission::output;
 use lexer::{Lexer, TokenType};
 use mir::{debug_tacky, gen_tacky};
 use parser::Parser;
-use semantic_analysis::{analyze_switches, label_loops, resolve, validate_labels};
+use semantic_analysis::{analyze_switches, label_loops, resolve, TypeChecker, validate_labels};
 
 #[derive(ClapParser, Debug)]
 #[command(version, about, long_about = "Runs the Hecate C compiler")]
@@ -25,7 +26,7 @@ struct CLI {
 
 /// Run C compiler with optional arguments
 #[derive(Args, Debug)]
-#[group(required = false, multiple = false)]
+#[group(required = false, multiple = true)]
 struct StageOptions {
     /// Stop after lexer
     #[arg(long)]
@@ -53,7 +54,11 @@ struct StageOptions {
 
     /// Write out tacky code
     #[arg(short = 'd')]
-    debug: bool
+    debug: bool,
+
+    /// Compile and assemble into object file, but do not link
+    #[arg(short = 'c')]
+    c: bool,
 }
 
 /// Which stage the compiler should stop at
@@ -64,27 +69,28 @@ enum StopStage {
     Assembler,
     Tacky,
     Analysis,
+    Object,
 }
 
 impl StopStage {
     fn from_args(options: &StageOptions) -> Option<StopStage> {
-        if options.lex {
-            return Some(StopStage::Lexer);
+        return if options.lex {
+            Some(StopStage::Lexer)
         } else if options.parse {
-            return Some(StopStage::Parser);
+            Some(StopStage::Parser)
         } else if options.codegen {
-            return Some(StopStage::CodeGen);
+            Some(StopStage::CodeGen)
         } else if options.s {
-            return Some(StopStage::Assembler);
+            Some(StopStage::Assembler)
         } else if options.tacky {
-            return Some(StopStage::Tacky);
-        }
-        else if options.validate {
-            return Some(StopStage::Analysis)
-        }
-        else {
-            return None;
-        }
+            Some(StopStage::Tacky)
+        } else if options.validate {
+            Some(StopStage::Analysis)
+        } else if options.c {
+            Some(StopStage::Object)
+        } else {
+            None
+        };
     }
 }
 
@@ -130,28 +136,37 @@ fn run_driver(path: &str, stop_stage: &Option<StopStage>, debug: bool) -> Result
         .output()
         .expect("Failed to delete preprocessed file");
 
-    // Assemble and link only if we don't stop during compilation
-    if let Some(_) = stop_stage {
-    } else {
-        let output = format!("{}/{file_name}", dir.display());
+    // Assemble only if we don't stop during compilation
+    let object_path = format!("{}/{file_name}.o", dir.display());
 
-        // Assemble and link
-        let output = Command::new("gcc")
-            .arg(&assembly_path)
-            .arg("-o")
-            .arg(&output)
-            .output()
-            .expect("Failed to execute assembler and linker");
+    // Assemble but don't link
+    let output = Command::new("gcc")
+        .arg("-c")
+        .arg(&assembly_path)
+        .arg("-o")
+        .arg(&object_path)
+        .output()
+        .expect("Failed to execute assembler");
 
-        std::io::stdout().write_all(&output.stdout).unwrap();
-        std::io::stderr().write_all(&output.stderr).unwrap();
+    std::io::stdout().write_all(&output.stdout).unwrap();
+    std::io::stderr().write_all(&output.stderr).unwrap();
 
-        //delete assembled file
-        // Command::new("rm")
-        //     .arg(&assembly_path)
-        //     .output()
-        //     .expect("Failed to delete assembly file");
+    if let Some(StopStage::Object) = stop_stage {
+        return Ok(());
     }
+
+    // actually link files together
+    let output = format!("{}/{file_name}", dir.display());
+
+    let output = Command::new("gcc")
+        .arg(&assembly_path)
+        .arg("-o")
+        .arg(&output)
+        .output()
+        .expect("Failed to execute assembler and linker");
+
+    std::io::stdout().write_all(&output.stdout).unwrap();
+    std::io::stderr().write_all(&output.stderr).unwrap();
 
     Ok(())
 }
@@ -186,7 +201,8 @@ fn compile(path: &str, stop_stage: &Option<StopStage>, assm_path: &str, debug: b
         }
 
         return Err(CompileErr::Lexer(error_msgs).into());
-    } else {}
+    } else {
+    }
 
     if let Some(StopStage::Lexer) = stop_stage {
         // tokenize() should have returned any error by now
@@ -204,11 +220,15 @@ fn compile(path: &str, stop_stage: &Option<StopStage>, assm_path: &str, debug: b
 
     resolve(&mut ast)?;
 
-    validate_labels(&ast)?;
+    validate_labels(&mut ast)?;
 
     label_loops(&mut ast)?;
 
     analyze_switches(&mut ast)?;
+
+    let mut type_checker = TypeChecker::new();
+
+    type_checker.check(&ast)?;
 
     // println!("RESOLVED AST:\n{:#?}", ast);
 
@@ -216,10 +236,10 @@ fn compile(path: &str, stop_stage: &Option<StopStage>, assm_path: &str, debug: b
         return Ok(());
     }
 
-    let tacky = gen_tacky(ast);
+    let tacky = gen_tacky(&ast);
 
     if debug {
-        println!("Assm Path: {}", assm_path);
+        // println!("Assm Path: {}", assm_path);
 
         let tacky_name: Vec<_> = assm_path.split(".s").collect();
         let tacky_name = format!("{}.tacky", tacky_name.get(0).unwrap());
@@ -233,7 +253,7 @@ fn compile(path: &str, stop_stage: &Option<StopStage>, assm_path: &str, debug: b
         return Ok(());
     }
 
-    let assm_ast = gen_assm(&tacky);
+    let assm_ast = gen_assm(&tacky, &mut type_checker.symbols);
 
     // println!("ASSM:\n{:#?}", assm_ast);
 
@@ -241,7 +261,7 @@ fn compile(path: &str, stop_stage: &Option<StopStage>, assm_path: &str, debug: b
         return Ok(());
     }
 
-    output(assm_path, assm_ast)?;
+    output(assm_path, assm_ast, &type_checker.symbols)?;
 
     Ok(())
 }

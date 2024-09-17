@@ -1,15 +1,16 @@
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub struct TranslationUnit {
-    pub func: Func,
+    pub funcs: Vec<Func>,
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub struct Func {
     pub name: String,
+    pub params: Vec<String>,
     pub instructions: Vec<Instruction>,
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub enum Instruction {
     Return(Val),
     Unary {
@@ -38,6 +39,11 @@ pub enum Instruction {
         condition: Val,
         target: String,
     },
+    FunCall {
+        func_name: String,
+        args: Vec<Val>,
+        dest: Val,
+    },
     Label(String),
 }
 
@@ -47,14 +53,14 @@ pub enum Val {
     Var(String),
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub enum UnaryOp {
     Complement,
     Negate,
     Not,
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub enum BinaryOp {
     Add,
     Subtract,
