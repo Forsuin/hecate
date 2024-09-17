@@ -1,9 +1,9 @@
 use lir::*;
 use mir::tacky;
 use mir::tacky::Val;
-
+use ty::{Scope, Symbol};
 use crate::fix_instructions::fix_invalid_instructions;
-use crate::replace_pseudoregisters::PseudoReplacer;
+use crate::replace_pseudoregisters::replace_psuedos;
 
 mod fix_instructions;
 mod replace_pseudoregisters;
@@ -17,28 +17,73 @@ macro_rules! tb {
     };
 }
 
-pub fn gen_assm(tacky: &tacky::TranslationUnit) -> Program {
-    match &tacky {
-        &tacky::TranslationUnit { func } => {
-            let prog = Program {
-                func: gen_func(&func),
-            };
+const PARAM_PASSING_REGS: [Register; 6] = [
+    Register::DI,
+    Register::SI,
+    Register::DX,
+    Register::CX,
+    Register::R8,
+    Register::R9,
+];
 
-            let mut replaced = PseudoReplacer::replace_psuedos(&prog);
+pub fn gen_assm(tacky: &tacky::TranslationUnit, symbol_table: &mut Scope<Symbol>) -> Program {
+    let mut funcs = vec![];
 
-            fix_invalid_instructions(&mut replaced.0, replaced.1)
-        }
+    for func in &tacky.funcs {
+        funcs.push(gen_func(func));
     }
+
+    let prog = Program { funcs };
+
+    let mut replaced = replace_psuedos(&prog, symbol_table);
+
+    fix_invalid_instructions(&mut replaced, symbol_table)
 }
 
-fn gen_func(func: &tacky::Func) -> Function {
-    Function {
+fn gen_func(func: &tacky::Func) -> Func {
+    let mut instructions = gen_params(&func.params);
+    instructions.append(&mut gen_instructions(&func.instructions));
+
+    Func {
         name: func.name.clone(),
-        instructions: gen_instructions(&func.instructions),
+        instructions,
     }
 }
 
-fn gen_instructions(instructions: &Vec<tacky::Instruction>) -> Vec<Instruction> {
+fn gen_params(params: &Vec<String>) -> Vec<lir::Instruction> {
+    let try_split = params.split_at_checked(6);
+
+    let (register_params, stack_params) = if let Some(split) = try_split {
+        (split.0, split.1)
+    } else {
+        (params.as_slice(), &[] as &[String])
+    };
+
+    let mut instructions = vec![];
+
+    // pass in registers
+    for (i, param) in register_params.iter().enumerate() {
+        let reg = &PARAM_PASSING_REGS[i];
+
+        instructions.push(Instruction::Mov {
+            src: Operand::Register(reg.clone()),
+            dest: Operand::Pseudo(param.clone()),
+        })
+    }
+
+    // pass on stack
+    for (i, param) in stack_params.iter().enumerate() {
+        instructions.push(Instruction::Mov {
+            // stack has to grow up
+            src: Operand::Stack(16 + (8 * i) as i32),
+            dest: Operand::Pseudo(param.clone()),
+        })
+    }
+
+    instructions
+}
+
+fn gen_instructions(instructions: &Vec<tacky::Instruction>) -> Vec<lir::Instruction> {
     let mut assm_instr = vec![];
 
     for i in instructions {
@@ -176,6 +221,63 @@ fn gen_instructions(instructions: &Vec<tacky::Instruction>) -> Vec<Instruction> 
             }
             tacky::Instruction::Label(identifier) => {
                 assm_instr.push(Instruction::Label(identifier.clone()))
+            }
+            tacky::Instruction::FunCall {
+                func_name,
+                args,
+                dest,
+            } => {
+                let try_split = args.split_at_checked(6);
+
+                let (reg_params, stack_params) = if let Some(split) = try_split {
+                    (split.0, split.1)
+                } else {
+                    (args.as_slice(), &[] as &[Val])
+                };
+
+                let stack_padding = if stack_params.len() % 2 == 0 { 0 } else { 8 };
+
+                if stack_padding != 0 {
+                    assm_instr.push(Instruction::AllocateStack(stack_padding));
+                }
+
+                for (i, param) in reg_params.iter().enumerate() {
+                    let reg = &PARAM_PASSING_REGS[i];
+                    let arg = gen_operand(param);
+
+                    assm_instr.push(Instruction::Mov {
+                        src: arg,
+                        dest: Operand::Register(reg.clone()),
+                    });
+                }
+
+                for param in stack_params.iter().rev() {
+                    let arg = gen_operand(param);
+
+                    if matches!(arg, Operand::Register(_) | Operand::Imm(_)) {
+                        assm_instr.push(Instruction::Push(arg));
+                    } else {
+                        assm_instr.push(Instruction::Mov {
+                            src: arg,
+                            dest: Operand::Register(Register::AX),
+                        });
+                        assm_instr.push(Instruction::Push(Operand::Register(Register::AX)));
+                    }
+                }
+
+                assm_instr.push(Instruction::Call(func_name.clone()));
+
+                let bytes_to_remove = 8 * stack_params.len() as i32 + stack_padding;
+
+                if bytes_to_remove != 0 {
+                    assm_instr.push(Instruction::DeallocateStack(bytes_to_remove));
+                }
+
+                let dest = gen_operand(dest);
+                assm_instr.push(Instruction::Mov {
+                    src: Operand::Register(Register::AX),
+                    dest,
+                });
             }
         }
     }

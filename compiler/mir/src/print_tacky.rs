@@ -5,11 +5,13 @@ use crate::tacky::*;
 
 type IOResult = std::io::Result<()>;
 
-pub fn debug_tacky(program: &TranslationUnit, file_name: String)-> IOResult {
+pub fn debug_tacky(program: &TranslationUnit, file_name: String) -> IOResult {
     let output = File::create(file_name)?;
     let mut writer = BufWriter::new(output);
 
-    print_func(&mut writer, &program.func)?;
+    for func in &program.funcs {
+        print_func(&mut writer, func)?;
+    }
 
     writer.flush()?;
 
@@ -17,7 +19,12 @@ pub fn debug_tacky(program: &TranslationUnit, file_name: String)-> IOResult {
 }
 
 fn print_func<W: Write>(writer: &mut W, func: &Func) -> IOResult {
-    writeln!(writer, "{}:", func.name)?;
+    writeln!(
+        writer,
+        "{}({}):",
+        func.name,
+        func.params.join(", ")
+    )?;
 
     for instruction in &func.instructions {
         print_instruction(writer, instruction)?;
@@ -32,10 +39,28 @@ fn print_instruction<W: Write>(writer: &mut W, instr: &Instruction) -> IOResult 
             writeln!(writer, "\tReturn({})", format_val(val))
         }
         Instruction::Unary { op, src, dest } => {
-            writeln!(writer, "\t{} = {}{}", format_val(dest), format_unary(op), format_val(src))
+            writeln!(
+                writer,
+                "\t{} = {}{}",
+                format_val(dest),
+                format_unary(op),
+                format_val(src)
+            )
         }
-        Instruction::Binary { op, first, second, dest } => {
-            writeln!(writer, "\t{} = {} {} {}", format_val(dest), format_val(first), format_binary(op), format_val(second))
+        Instruction::Binary {
+            op,
+            first,
+            second,
+            dest,
+        } => {
+            writeln!(
+                writer,
+                "\t{} = {} {} {}",
+                format_val(dest),
+                format_val(first),
+                format_binary(op),
+                format_val(second)
+            )
         }
         Instruction::Copy { src, dest } => {
             writeln!(writer, "\t{} = {}", format_val(dest), format_val(src))
@@ -44,13 +69,39 @@ fn print_instruction<W: Write>(writer: &mut W, instr: &Instruction) -> IOResult 
             writeln!(writer, "\tJump({})", target)
         }
         Instruction::JumpIfZero { condition, target } => {
-            writeln!(writer, "\tJumpIfZero({}, {})", format_val(condition), target)
+            writeln!(
+                writer,
+                "\tJumpIfZero({}, {})",
+                format_val(condition),
+                target
+            )
         }
         Instruction::JumpIfNotZero { condition, target } => {
-            writeln!(writer, "\tJumpIfNotZero({}, {})", format_val(condition), target)
+            writeln!(
+                writer,
+                "\tJumpIfNotZero({}, {})",
+                format_val(condition),
+                target
+            )
         }
         Instruction::Label(label) => {
             writeln!(writer, "\n  {}:", label)
+        }
+        Instruction::FunCall {
+            func_name,
+            args,
+            dest,
+        } => {
+            writeln!(
+                writer,
+                "\t{} = {}({})",
+                format_val(dest),
+                func_name,
+                args.iter()
+                    .map(|arg| format_val(arg))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
         }
     }
 }
@@ -60,9 +111,7 @@ fn format_val(val: &Val) -> String {
         Val::Constant(c) => {
             format!("{}", *c)
         }
-        Val::Var(var) => {
-            var.clone()
-        }
+        Val::Var(var) => var.clone(),
     }
 }
 

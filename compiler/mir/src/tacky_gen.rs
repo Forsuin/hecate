@@ -1,35 +1,44 @@
-use ast::{BinaryOp, BlockItem, Expr, ForInit, Stmt, UnaryOp};
+use ast::{BinaryOp, BlockItem, Decl, Expr, ForInit, Stmt, UnaryOp};
 use unique_ident::*;
 
 use crate::tacky;
 use crate::tacky::{Instruction, Val};
 use crate::tacky::Instruction::{Jump, JumpIfNotZero};
 
-pub fn gen_tacky(ast: ast::TranslationUnit) -> tacky::TranslationUnit {
-    match ast {
-        ast::TranslationUnit { func } => tacky::TranslationUnit {
-            func: tacky_func(func),
-        },
+pub fn gen_tacky(ast: &ast::TranslationUnit) -> tacky::TranslationUnit {
+    let mut funcs = vec![];
+
+    for func in &ast.funcs {
+        if let Some(_) = func.body {
+            funcs.push(tacky_func(func));
+        }
+    }
+
+    tacky::TranslationUnit {
+        funcs
     }
 }
 
-fn tacky_func(func: ast::Func) -> tacky::Func {
+fn tacky_func(func: &ast::FuncDecl) -> tacky::Func {
     let mut instructions = vec![];
 
-    instructions.append(&mut tacky_block(func.body));
+    if let Some(body) = &func.body {
+        instructions.append(&mut tacky_block(body));
+    }
 
     instructions.push(Instruction::Return(Val::Constant(0)));
 
     tacky::Func {
-        name: func.ident,
+        name: func.ident.clone(),
+        params: func.params.clone(),
         instructions,
     }
 }
 
-fn tacky_block(block: ast::Block) -> Vec<Instruction> {
+fn tacky_block(block: &ast::Block) -> Vec<Instruction> {
     let mut instructions = vec![];
 
-    for block_item in block.items {
+    for block_item in &block.items {
         match block_item {
             BlockItem::S(stmt) => {
                 for instruction in tacky_stmt(stmt) {
@@ -45,14 +54,21 @@ fn tacky_block(block: ast::Block) -> Vec<Instruction> {
     instructions
 }
 
-fn tacky_decl(decl: ast::Decl) -> Vec<Instruction> {
+fn tacky_decl(decl: &ast::Decl) -> Vec<Instruction> {
+    match decl {
+        Decl::FuncDecl { .. } => { vec![] }
+        Decl::VarDecl { var } => { tacky_var_decl(var) }
+    }
+}
+
+fn tacky_var_decl(decl: &ast::VarDecl) -> Vec<Instruction> {
     let mut instructions = vec![];
 
-    match decl.init {
+    match &decl.init {
         Some(init) => {
-            let (mut expr_instr, _) = tacky_expr(Expr::Assignment {
-                lvalue: Box::new(Expr::Var(decl.name)),
-                expr: Box::new(init),
+            let (mut expr_instr, _) = tacky_expr(&Expr::Assignment {
+                lvalue: Box::new(Expr::Var(decl.name.clone())),
+                expr: Box::new(init.clone()),
             });
             instructions.append(&mut expr_instr);
         }
@@ -62,7 +78,7 @@ fn tacky_decl(decl: ast::Decl) -> Vec<Instruction> {
     instructions
 }
 
-fn tacky_stmt(stmt: ast::Stmt) -> Vec<tacky::Instruction> {
+fn tacky_stmt(stmt: &ast::Stmt) -> Vec<tacky::Instruction> {
     match stmt {
         ast::Stmt::Return { expr } => {
             let (mut instructions, value) = tacky_expr(expr);
@@ -86,12 +102,12 @@ fn tacky_stmt(stmt: ast::Stmt) -> Vec<tacky::Instruction> {
                 target: if otherwise.is_some() { else_label.clone() } else { end_label.clone() },
             });
 
-            instructions.append(&mut tacky_stmt(*then));
+            instructions.append(&mut tacky_stmt(then));
 
             if let Some(otherwise) = otherwise {
                 instructions.push(Jump { target: end_label.clone() });
                 instructions.push(Instruction::Label(else_label.clone()));
-                instructions.append(&mut tacky_stmt(*otherwise));
+                instructions.append(&mut tacky_stmt(otherwise));
             }
             else {
                 // Do nothing
@@ -106,12 +122,12 @@ fn tacky_stmt(stmt: ast::Stmt) -> Vec<tacky::Instruction> {
         }
 
         Stmt::Goto { label } => {
-            vec![Instruction::Jump { target: label }]
+            vec![Instruction::Jump { target: label.clone() }]
         }
         Stmt::LabeledStmt { label, stmt } => {
-            let mut instructions = vec![Instruction::Label(label)];
+            let mut instructions = vec![Instruction::Label(label.clone())];
 
-            instructions.append(&mut tacky_stmt(*stmt));
+            instructions.append(&mut tacky_stmt(stmt));
 
             instructions
         }
@@ -153,7 +169,7 @@ fn tacky_stmt(stmt: ast::Stmt) -> Vec<tacky::Instruction> {
                 target: break_label.clone()
             });
 
-            instuctions.append(&mut tacky_stmt(*body));
+            instuctions.append(&mut tacky_stmt(body));
 
             instuctions.push(Instruction::Jump {
                 target: continue_label.clone()
@@ -171,7 +187,7 @@ fn tacky_stmt(stmt: ast::Stmt) -> Vec<tacky::Instruction> {
             let break_label = format!("break.{}", label);
 
             instructions.push(Instruction::Label(start_label.clone()));
-            instructions.append(&mut tacky_stmt(*body));
+            instructions.append(&mut tacky_stmt(body));
             instructions.push(Instruction::Label(continue_label));
 
             let (mut cond_instr, cond) = tacky_expr(condition);
@@ -193,7 +209,7 @@ fn tacky_stmt(stmt: ast::Stmt) -> Vec<tacky::Instruction> {
 
             match init {
                 ForInit::Decl(decl) => {
-                    instructions.append(&mut tacky_decl(decl));
+                    instructions.append(&mut tacky_var_decl(decl));
                 }
                 ForInit::Expr(expr) => {
                     match expr {
@@ -221,7 +237,7 @@ fn tacky_stmt(stmt: ast::Stmt) -> Vec<tacky::Instruction> {
                 None => {}
             }
 
-            instructions.append(&mut tacky_stmt(*body));
+            instructions.append(&mut tacky_stmt(body));
 
             instructions.push(Instruction::Label(continue_label.clone()));
 
@@ -243,23 +259,23 @@ fn tacky_stmt(stmt: ast::Stmt) -> Vec<tacky::Instruction> {
             instructions
         }
         Stmt::Switch { control, body, label } => {
-            tacky_switch(control, *body, label)
+            tacky_switch(control, body, label.clone())
         }
         Stmt::Case { constant: _, body, label } => {
             let mut instructions = vec![];
 
-            instructions.push(Instruction::Label(label));
+            instructions.push(Instruction::Label(label.clone()));
 
-            instructions.append(& mut tacky_stmt(*body));
+            instructions.append(& mut tacky_stmt(body));
 
             instructions
         }
         Stmt::Default { body, label } => {
             let mut instructions = vec![];
 
-            instructions.push(Instruction::Label(label));
+            instructions.push(Instruction::Label(label.clone()));
 
-            instructions.append(& mut tacky_stmt(*body));
+            instructions.append(& mut tacky_stmt(body));
 
             instructions
         }
@@ -267,17 +283,17 @@ fn tacky_stmt(stmt: ast::Stmt) -> Vec<tacky::Instruction> {
 
 }
 
-fn tacky_expr(expr: ast::Expr) -> (Vec<tacky::Instruction>, tacky::Val) {
+fn tacky_expr(expr: &ast::Expr) -> (Vec<tacky::Instruction>, tacky::Val) {
     match expr {
-        ast::Expr::Constant(val) => (vec![], tacky::Val::Constant(val)),
+        ast::Expr::Constant(val) => (vec![], tacky::Val::Constant(*val)),
         Expr::Unary { op: UnaryOp::Inc, expr } => {
-            tacky_compound_expression(BinaryOp::Add, *expr, Expr::Constant(1))
+            tacky_compound_expression(BinaryOp::Add, expr, &Expr::Constant(1))
         }
         Expr::Unary { op: UnaryOp::Dec, expr } => {
-            tacky_compound_expression(BinaryOp::Subtract, *expr, Expr::Constant(1))
+            tacky_compound_expression(BinaryOp::Subtract, expr, &Expr::Constant(1))
         }
         ast::Expr::Unary { op, expr } => {
-            let (instructions, inner) = tacky_expr(*expr);
+            let (instructions, inner) = tacky_expr(expr);
             let dest_name = make_temp();
             let dest = tacky::Val::Var(dest_name);
             let op = tacky_unop(op);
@@ -296,8 +312,8 @@ fn tacky_expr(expr: ast::Expr) -> (Vec<tacky::Instruction>, tacky::Val) {
             left,
             right,
         } => {
-            let (left_instr, v1) = tacky_expr(*left);
-            let (right_instr, v2) = tacky_expr(*right);
+            let (left_instr, v1) = tacky_expr(left);
+            let (right_instr, v2) = tacky_expr(right);
             let false_label = make_label("and_false_branch");
             let end_label = make_label("and_end");
             let dest_name = make_temp();
@@ -338,8 +354,8 @@ fn tacky_expr(expr: ast::Expr) -> (Vec<tacky::Instruction>, tacky::Val) {
             left,
             right,
         } => {
-            let (left_instr, v1) = tacky_expr(*left);
-            let (right_instr, v2) = tacky_expr(*right);
+            let (left_instr, v1) = tacky_expr(left);
+            let (right_instr, v2) = tacky_expr(right);
             let true_label = make_label("or_true_branch");
             let end_label = make_label("or_end");
             let dest_name = make_temp();
@@ -376,11 +392,11 @@ fn tacky_expr(expr: ast::Expr) -> (Vec<tacky::Instruction>, tacky::Val) {
             (instructions, dest)
         }
         ast::Expr::Binary { op, left, right } => {
-            let (left_instr, left_inner) = tacky_expr(*left);
-            let (mut right_instr, right_inner) = tacky_expr(*right);
+            let (left_instr, left_inner) = tacky_expr(left);
+            let (mut right_instr, right_inner) = tacky_expr(right);
             let dest_name = make_temp();
             let dest = tacky::Val::Var(dest_name);
-            let op = tacky_binop(op);
+            let op = tacky_binop(op.clone());
 
             let mut instructions = left_instr;
             instructions.append(&mut right_instr);
@@ -394,31 +410,31 @@ fn tacky_expr(expr: ast::Expr) -> (Vec<tacky::Instruction>, tacky::Val) {
             (instructions, dest)
         }
 
-        Expr::Var(v) => (vec![], tacky::Val::Var(v)),
+        Expr::Var(v) => (vec![], tacky::Val::Var(v.clone())),
         Expr::Assignment { lvalue, expr } => {
-            let v = match *lvalue {
+            let v = match lvalue.as_ref() {
                 Expr::Var(v) => v,
                 _ => unreachable!("Assignment lvalue should always be a Var"),
             };
 
-            let (mut instructions, result) = tacky_expr(*expr);
+            let (mut instructions, result) = tacky_expr(expr);
 
             instructions.push(tacky::Instruction::Copy {
                 src: result,
                 dest: tacky::Val::Var(v.clone()),
             });
 
-            (instructions, tacky::Val::Var(v))
+            (instructions, tacky::Val::Var(v.clone()))
         }
-        Expr::CompoundAssignment { op, lvalue, expr } => tacky_compound_expression(op, *lvalue, *expr),
+        Expr::CompoundAssignment { op, lvalue, expr } => tacky_compound_expression(*op, lvalue, expr),
         Expr::PostfixInc(expr) => {
-            let expr = match *expr {
-                Expr::Var(v) => Val::Var(v),
+            let expr = match expr.as_ref() {
+                Expr::Var(v) => Val::Var(v.clone()),
                 _ => unreachable!("Assignment lvalue should always be a Var"),
             };
 
             let dest = Val::Var(make_temp());
-            
+
             let instructions = vec![
                 Instruction::Copy { src: expr.clone(), dest: dest.clone() },
                 Instruction::Binary {
@@ -432,8 +448,8 @@ fn tacky_expr(expr: ast::Expr) -> (Vec<tacky::Instruction>, tacky::Val) {
             (instructions, dest)
         }
         Expr::PostfixDec(expr) => {
-            let expr = match *expr {
-                Expr::Var(v) => Val::Var(v),
+            let expr = match expr.as_ref() {
+                Expr::Var(v) => Val::Var(v.clone()),
                 _ => unreachable!("Assignment lvalue should always be a Var"),
             };
 
@@ -457,14 +473,14 @@ fn tacky_expr(expr: ast::Expr) -> (Vec<tacky::Instruction>, tacky::Val) {
             let result_name = make_temp();
             let result = Val::Var(result_name);
 
-            let (mut instructions, c) = tacky_expr(*condition);
+            let (mut instructions, c) = tacky_expr(condition);
 
             instructions.push(Instruction::JumpIfZero {
                 condition: c,
                 target: else_label.clone(),
             });
 
-            let (mut then_instructions, v1) = tacky_expr(*then);
+            let (mut then_instructions, v1) = tacky_expr(then);
             instructions.append(&mut then_instructions);
 
             instructions.push(Instruction::Copy {
@@ -477,7 +493,7 @@ fn tacky_expr(expr: ast::Expr) -> (Vec<tacky::Instruction>, tacky::Val) {
 
             instructions.push(Instruction::Label(else_label));
 
-            let (mut else_instructions, v2) = tacky_expr(*otherwise);
+            let (mut else_instructions, v2) = tacky_expr(otherwise);
             instructions.append(&mut else_instructions);
 
             instructions.push(Instruction::Copy {
@@ -489,10 +505,31 @@ fn tacky_expr(expr: ast::Expr) -> (Vec<tacky::Instruction>, tacky::Val) {
 
             (instructions, result)
         }
+        Expr::FunctionCall { func, args } => {
+            let dest_name = make_temp();
+            let dest = Val::Var(dest_name);
+
+            let mut arg_instr = vec![];
+            let mut arg_vals = vec![];
+
+            for arg in args {
+                let (mut instr, arg_val) = tacky_expr(arg);
+                arg_instr.append(&mut instr);
+                arg_vals.push(arg_val);
+            }
+
+            arg_instr.push(Instruction::FunCall {
+                func_name: func.clone(),
+                args: arg_vals,
+                dest: dest.clone(),
+            });
+
+            (arg_instr, dest)
+        }
     }
 }
 
-fn tacky_unop(op: ast::UnaryOp) -> tacky::UnaryOp {
+fn tacky_unop(op: &ast::UnaryOp) -> tacky::UnaryOp {
     match op {
         ast::UnaryOp::Complement => tacky::UnaryOp::Complement,
         ast::UnaryOp::Negate => tacky::UnaryOp::Negate,
@@ -501,7 +538,7 @@ fn tacky_unop(op: ast::UnaryOp) -> tacky::UnaryOp {
     }
 }
 
-fn tacky_binop(op: ast::BinaryOp) -> tacky::BinaryOp {
+fn tacky_binop(op: BinaryOp) -> tacky::BinaryOp {
     match op {
         BinaryOp::Add => tacky::BinaryOp::Add,
         BinaryOp::Subtract => tacky::BinaryOp::Subtract,
@@ -530,11 +567,11 @@ fn tacky_binop(op: ast::BinaryOp) -> tacky::BinaryOp {
     }
 }
 
-fn tacky_compound_expression(op: BinaryOp, lvalue: Expr, rhs: Expr) -> (Vec<Instruction>, Val) {
+fn tacky_compound_expression(op: BinaryOp, lvalue: &Expr, rhs: &Expr) -> (Vec<Instruction>, Val) {
     let (mut instructions, rhs) = tacky_expr(rhs);
 
     let dest= match lvalue {
-        Expr::Var(v) => Val::Var(v),
+        Expr::Var(v) => Val::Var(v.clone()),
         _ => unreachable!("Assignment lvalue should always be a Var"),
     };
 
@@ -550,7 +587,7 @@ fn tacky_compound_expression(op: BinaryOp, lvalue: Expr, rhs: Expr) -> (Vec<Inst
     (instructions, dest)
 }
 
-fn tacky_switch(control: Expr, body: Stmt, label: String) -> Vec<Instruction> {
+fn tacky_switch(control: &Expr, body: &Stmt, label: String) -> Vec<Instruction> {
     let cases = gather_cases(&body);
 
     let break_label = format!("break.{}", label);

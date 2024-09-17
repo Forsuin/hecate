@@ -2,13 +2,14 @@
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct TranslationUnit {
-    pub func: Func,
+    pub funcs: Vec<FuncDecl>,
 }
 
 #[derive(Debug, Eq, PartialEq, Clone)]
-pub struct Func {
+pub struct FuncDecl {
     pub ident: String,
-    pub body: Block,
+    pub params: Vec<String>,
+    pub body: Option<Block>,
 }
 
 #[derive(Debug, Eq, PartialEq, Clone)]
@@ -23,14 +24,20 @@ pub enum BlockItem {
 }
 
 #[derive(Debug, Eq, PartialEq, Clone)]
-pub struct Decl {
+pub enum Decl {
+    FuncDecl { func: FuncDecl },
+    VarDecl { var: VarDecl },
+}
+
+#[derive(Debug, Eq, PartialEq, Clone)]
+pub struct VarDecl {
     pub name: String,
     pub init: Option<Expr>,
 }
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub enum ForInit {
-    Decl(Decl),
+    Decl(VarDecl),
     Expr(Option<Expr>),
 }
 
@@ -126,6 +133,10 @@ pub enum Expr {
     },
     PostfixInc(Box<Expr>),
     PostfixDec(Box<Expr>),
+    FunctionCall {
+        func: String,
+        args: Vec<Expr>,
+    },
 }
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]

@@ -1,3 +1,4 @@
+
 use std::str::Chars;
 
 use thiserror::Error;
@@ -72,6 +73,7 @@ pub enum TokenType {
     Tilde,
     Question,
     Colon,
+    Comma,
 
     // One or two character tokens
     Bang,
@@ -195,6 +197,7 @@ impl<'a> Lexer<'a> {
             ':' => TokenType::Colon,
             '?' => TokenType::Question,
             '~' => TokenType::Tilde,
+            ',' => TokenType::Comma,
             '-' => match self.peek() {
                 '-' => {
                     self.advance();
@@ -546,6 +549,30 @@ mod tests {
     fn switch_case_keywords() {
         let src = "switch case default";
         let expected = vec![Switch, Case, Default];
+
+        let mut lexer = Lexer::new(src);
+        let tokens = lexer.tokenize();
+        let tokens: Vec<_> = tokens.map(|t| t.kind).collect();
+
+        assert_eq!(tokens, expected)
+    }
+
+    #[test]
+    fn comma_char() {
+        let src = ",";
+        let expected = vec![Comma];
+
+        let mut lexer = Lexer::new(src);
+        let tokens = lexer.tokenize();
+        let tokens: Vec<_> = tokens.map(|t| t.kind).collect();
+
+        assert_eq!(tokens, expected)
+    }
+
+    #[test]
+    fn comma_func_decl() {
+        let src = "int func(int first, int second);";
+        let expected = vec![Int, Identifier, OpenParen, Int, Identifier, Comma, Int, Identifier, CloseParen, Semicolon];
 
         let mut lexer = Lexer::new(src);
         let tokens = lexer.tokenize();

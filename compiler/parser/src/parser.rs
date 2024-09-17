@@ -44,22 +44,28 @@ impl Parser {
     }
 
     pub fn parse(&mut self) -> Result<TranslationUnit, ParseError> {
-        let func = self.parse_func()?;
-        self.expect_empty()?;
-        Ok(TranslationUnit { func })
+        Ok(TranslationUnit {
+            funcs: self.parse_func_decl_list()?,
+        })
     }
 
-    fn parse_func(&mut self) -> Result<Func, ParseError> {
-        self.expect(TokenType::Int)?;
-        let name = self.parse_ident()?;
+    fn parse_func_decl_list(&mut self) -> Result<Vec<FuncDecl>, ParseError> {
+        let mut funcs = vec![];
 
-        self.expect(TokenType::OpenParen)?;
-        self.expect(TokenType::Void)?;
-        self.expect(TokenType::CloseParen)?;
+        while let Some(_) = self.peek() {
+            match self.parse_decl()? {
+                Decl::FuncDecl { func } => {
+                    funcs.push(func);
+                }
+                Decl::VarDecl { .. } => {
+                    return Err(ParseError::new(format!("Expected function declaration at top level, but found variable declaration instead")))
+                }
+            }
+        }
 
-        let body = self.parse_block()?;
+        self.expect_empty()?;
 
-        Ok(Func { ident: name, body })
+        Ok(funcs)
     }
 
     fn parse_block(&mut self) -> Result<Block, ParseError> {
@@ -94,11 +100,106 @@ impl Parser {
         }
     }
 
+    fn parse_var_decl(&mut self) -> Result<VarDecl, ParseError> {
+        match self.parse_decl()? {
+            Decl::FuncDecl{ .. } => Err(ParseError::new(format!(
+                "Expected variable declaration but found function declaration"
+            ))),
+            Decl::VarDecl{ var } => Ok(var),
+        }
+    }
+
     fn parse_decl(&mut self) -> Result<Decl, ParseError> {
         self.expect(TokenType::Int)?;
-
         let ident = self.parse_ident()?;
 
+        match self.peek() {
+            None => Err(ParseError::new(format!("Unexpected end of file"))),
+            Some(Token {
+                kind: TokenType::OpenParen,
+                ..
+            }) => Ok(Decl::FuncDecl {
+                func: self.parse_rest_func_decl(ident)?,
+            }),
+            Some(_) => Ok(Decl::VarDecl {
+                var: self.parse_rest_var_decl(ident)?,
+            }),
+        }
+    }
+
+    fn parse_rest_func_decl(&mut self, name: String) -> Result<FuncDecl, ParseError> {
+        self.expect(TokenType::OpenParen)?;
+
+        let mut param_list = vec![];
+
+        loop {
+            match self.peek() {
+                None => {
+                    return Err(ParseError::new(
+                        "Expected ')', but found end of file instead".to_string(),
+                    ))
+                }
+                Some(Token {
+                    kind: TokenType::Comma,
+                    ..
+                }) => {
+                    self.expect(TokenType::Comma)?;
+
+                    if self.peek().is_some_and(|token| token.kind == TokenType::CloseParen) {
+                        return Err(ParseError::new("Found trailing comma at end of parameter list".to_string()))
+                    }
+                }
+                Some(Token {
+                    kind: TokenType::Int,
+                    ..
+                }) => {
+                    self.expect(TokenType::Int)?;
+
+                    param_list.push(self.parse_ident()?);
+                }
+                Some(Token {
+                         kind: TokenType::Void,
+                         ..
+                     }) => {
+                    self.expect(TokenType::Void)?;
+                }
+                Some(Token {
+                    kind: TokenType::CloseParen,
+                    ..
+                }) => {
+                    self.expect(TokenType::CloseParen)?;
+                    break;
+                }
+                _ => {
+                    return Err(ParseError::new(format!(
+                        "Expected function paramaters, but found {:?}",
+                        self.peek()
+                    )))
+                }
+            }
+        }
+
+        let mut body = None;
+
+        if self
+            .peek()
+            .is_some_and(|token| token.kind == TokenType::OpenBrace)
+        {
+            body = Some(self.parse_block()?);
+        }
+            // function declaration with no definition
+        else {
+            self.expect(TokenType::Semicolon)?;
+        }
+
+        Ok(FuncDecl {
+            ident: name,
+            params: param_list,
+            body,
+        })
+    }
+
+    fn parse_rest_var_decl(&mut self, name: String) -> Result<VarDecl, ParseError> {
         let init;
 
         match self.tokens.peek() {
@@ -130,7 +231,7 @@ impl Parser {
             }
         }
 
-        Ok(Decl { name: ident, init })
+        Ok(VarDecl { name, init })
     }
 
     fn parse_ident(&mut self) -> Result<String, ParseError> {
@@ -367,7 +468,7 @@ impl Parser {
                 Ok(Stmt::Switch {
                     control,
                     body: Box::from(body),
-                    label: "".to_string()
+                    label: "".to_string(),
                 })
             }
             (
@@ -388,14 +489,14 @@ impl Parser {
                 Ok(Stmt::Case {
                     constant,
                     body: Box::from(body),
-                    label: "".to_string()
+                    label: "".to_string(),
                 })
             }
             (
                 Some(Token {
-                         kind: TokenType::Default,
-                         ..
-                     }),
+                    kind: TokenType::Default,
+                    ..
+                }),
                 _,
             ) => {
                 self.expect(TokenType::Default)?;
@@ -405,7 +506,7 @@ impl Parser {
 
                 Ok(Stmt::Default {
                     body: Box::from(body),
-                    label: "".to_string()
+                    label: "".to_string(),
                 })
             }
             _ => {
@@ -423,7 +524,7 @@ impl Parser {
             Some(Token {
                 kind: TokenType::Int,
                 ..
-            }) => Ok(ForInit::Decl(self.parse_decl()?)),
+            }) => Ok(ForInit::Decl(self.parse_var_decl()?)),
             Some(_) => Ok(ForInit::Expr(
                 self.parse_optional_expr(TokenType::Semicolon)?,
             )),
@@ -554,7 +655,7 @@ impl Parser {
     }
 
     fn parse_primary_expr(&mut self) -> Result<Expr, ParseError> {
-        match self.tokens.peek() {
+        match self.peek() {
             Some(Token {
                 kind: TokenType::OpenParen,
                 ..
@@ -576,18 +677,63 @@ impl Parser {
             }
             Some(Token {
                 kind: TokenType::Identifier,
-                value: TokenValue::Ident(var),
+                value: TokenValue::Ident(ident),
                 ..
             }) => {
-                let var = var.clone();
-                self.tokens.next();
-                Ok(Expr::Var(var))
+                let ident = ident.clone();
+                self.expect(TokenType::Identifier)?;
+
+                if let Some(Token { kind: TokenType::OpenParen, .. } ) = self.peek() {
+                    let args = self.parse_arg_list()?;
+
+                    Ok(Expr::FunctionCall { func: ident, args })
+                }
+                else {
+                    Ok(Expr::Var(ident))
+                }
+
             }
             t => Err(ParseError::new(format!(
                 "Expected a factor, found '{:?}'",
                 t
             ))),
         }
+    }
+
+    fn parse_arg_list(&mut self) -> Result<Vec<Expr>, ParseError> {
+        self.expect(TokenType::OpenParen)?;
+
+        let mut args = vec![];
+
+        loop {
+            match self.peek() {
+                None => {
+                    return Err(ParseError::new("Expected function argument, found end of file instead".to_string()))
+                }
+                Some(Token {
+                    kind: TokenType::Comma,
+                    ..
+                     }) => {
+                    self.expect(TokenType::Comma)?;
+
+                    if self.peek().is_some_and(|token| token.kind == TokenType::CloseParen) {
+                        return Err(ParseError::new("Found trailing comma at end of argument list".to_string()))
+                    }
+                }
+                Some(Token {
+                    kind: TokenType::CloseParen,
+                    ..
+                     }) => {
+                    self.expect(TokenType::CloseParen)?;
+                    break;
+                }
+                Some(_) => {
+                    args.push(self.parse_expr(0)?);
+                }
+            }
+        }
+
+        Ok(args)
     }
 
     fn parse_unop(&mut self) -> Result<UnaryOp, ParseError> {
@@ -830,7 +976,7 @@ mod tests {
             Stmt::Case {
                 constant: $constant,
                 body: Box::new($body),
-                label: "".to_string()
+                label: "".to_string(),
             }
         };
     }
@@ -853,7 +999,7 @@ mod tests {
         ($body:expr) => {
             Stmt::Default {
                 body: Box::new($body),
-                label: "".to_string()
+                label: "".to_string(),
             }
         };
     }

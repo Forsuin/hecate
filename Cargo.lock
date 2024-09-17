@@ -107,6 +107,7 @@ version = "0.1.0"
 dependencies = [
  "lir",
  "mir",
+ "ty",
 ]
 
 [[package]]
@@ -120,6 +121,7 @@ name = "emission"
 version = "0.1.0"
 dependencies = [
  "lir",
+ "ty",
 ]
 
 [[package]]
@@ -215,6 +217,7 @@ version = "0.1.0"
 dependencies = [
  "ast",
  "thiserror",
+ "ty",
  "unique_ident",
 ]
 
@@ -254,6 +257,10 @@ dependencies = [
  "quote",
  "syn",
 ]
+
+[[package]]
+name = "ty"
+version = "0.1.0"
 
 [[package]]
 name = "unicode-ident"

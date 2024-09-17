@@ -2,39 +2,38 @@ use std::fs::File;
 use std::io::{BufWriter, Write};
 
 use lir::*;
+use ty::*;
 
-pub fn output(path: &str, assm: Program) -> std::io::Result<()> {
+pub fn output(path: &str, assm: Program, symbols: &Scope<Symbol>) -> std::io::Result<()> {
 
     let output = File::create(path)?;
     let mut writer = BufWriter::new(output);
 
-    match assm {
-        Program { func } => {
-            emit_func(&mut writer, func)?;
-            emit_stack_note(&mut writer)?;
-        }
+    for func in &assm.funcs {
+        emit_func(&mut writer, func, symbols)?;
     }
+    emit_stack_note(&mut writer)?;
 
     writer.flush().expect("Unable to write assembly to output");
 
     Ok(())
 }
 
-fn emit_func<W: Write>(writer: &mut W, func: Function) -> std::io::Result<()> {
+fn emit_func<W: Write>(writer: &mut W, func: &Func, symbols: &Scope<Symbol>) -> std::io::Result<()> {
     writeln!(writer, "# <function: {}>", func.name)?;
     writeln!(writer, "\t.globl {}", func.name)?;
     writeln!(writer, "{}:", func.name)?;
     writeln!(writer, "\tpushq %rbp")?;
     writeln!(writer, "\tmovq %rsp, %rbp")?;
 
-    for instruction in func.instructions {
-        emit_instruction(writer, instruction)?;
+    for instruction in &func.instructions {
+        emit_instruction(writer, instruction, symbols)?;
     }
 
     Ok(())
 }
 
-fn emit_instruction<W: Write>(writer: &mut W, instruction: Instruction) -> std::io::Result<()> {
+fn emit_instruction<W: Write>(writer: &mut W, instruction: &Instruction, symbols: &Scope<Symbol>) -> std::io::Result<()> {
     match instruction {
         Instruction::Mov { src, dest } => {
             writeln!(
@@ -54,9 +53,19 @@ fn emit_instruction<W: Write>(writer: &mut W, instruction: Instruction) -> std::
             writeln!(writer, "\t{} {}", show_unary(op), show_operand(dest))?;
         }
         Instruction::AllocateStack(amt) => {
+            // writeln!(writer, "# <Allocate {}>", amt)?;
             writeln!(writer, "\tsubq ${}, %rsp", amt)?;
         }
-
+        Instruction::Binary { op: op @ BinaryOp::Sal | op @ BinaryOp::Sar, src, dest } => {
+            writeln!(writer, "# <{:?} {:?} {:?}>", src, op, dest)?;
+            writeln!(
+                writer,
+                "\t{} {}, {}",
+                show_binary(op),
+                show_byte_operand(src),
+                show_operand(dest)
+            )?;
+        }
         Instruction::Binary { op, src, dest } => {
             writeln!(writer, "# <{:?} {:?} {:?}>", src, op, dest)?;
             writeln!(
@@ -100,19 +109,45 @@ fn emit_instruction<W: Write>(writer: &mut W, instruction: Instruction) -> std::
             writeln!(writer, "# <Label: {}>", label)?;
             writeln!(writer, ".L_{}:", label)?;
         }
+        Instruction::DeallocateStack(amt) => {
+            // writeln!(writer, "# <Deallocate: {}>", amt)?;
+            writeln!(writer, "\taddq ${}, %rsp", amt)?;
+        }
+        Instruction::Push(op) => {
+            writeln!(writer, "\tpushq {}", show_quad_op(op))?;
+        }
+        Instruction::Call(func) => {
+            writeln!(writer, "\tcall {}", show_fun_name(func, symbols))?;
+        }
     }
 
     Ok(())
 }
 
-fn show_unary(op: UnaryOp) -> String {
+fn show_fun_name(name: &String, symbols: &Scope<Symbol>) -> String {
+    if symbols.get(name).is_some() {
+        name.clone()
+    }
+    else {
+        format!("{}@PLT", name)
+    }
+}
+
+fn show_quad_op(op: &Operand) -> String {
+    match op {
+        Operand::Register(r) => show_quad_reg(r),
+        _ => show_operand(op)
+    }
+}
+
+fn show_unary(op: &UnaryOp) -> String {
     match op {
         UnaryOp::Neg => "negl".to_string(),
         UnaryOp::Not => "notl".to_string(),
     }
 }
 
-fn show_binary(op: BinaryOp) -> String {
+fn show_binary(op: &BinaryOp) -> String {
     match op {
         BinaryOp::Add => "addl".to_string(),
         BinaryOp::Sub => "subl".to_string(),
@@ -125,29 +160,62 @@ fn show_binary(op: BinaryOp) -> String {
     }
 }
 
-fn show_byte_operand(op: Operand) -> String {
+fn show_byte_reg(reg: &Register) -> String {
+    match reg {
+            Register::AX => "%al".to_string(),
+            Register::CX => "%cl".to_string(),
+            Register::DX => "%dl".to_string(),
+            Register::DI => "%dil".to_string(),
+            Register::SI => "%sil".to_string(),
+            Register::R8 => "%r8b".to_string(),
+            Register::R9 => "%r9b".to_string(),
+            Register::R10 => "%r10b".to_string(),
+            Register::R11 => "%r11b".to_string(),
+    }
+}
+
+fn show_reg(reg: &Register) -> String {
+    format!(
+        "%{}",
+        match reg {
+            Register::AX => "eax",
+            Register::CX => "ecx",
+            Register::DX => "edx",
+            Register::DI => "edi",
+            Register::SI => "esi",
+            Register::R8 => "r8d",
+            Register::R9 => "r9d",
+            Register::R10 => "r10d",
+            Register::R11 => "r11d",
+        }
+    )
+}
+
+fn show_quad_reg(reg: &Register) -> String {
+    format!("%{}", match reg {
+        Register::AX => "rax",
+        Register::CX => "rcx",
+        Register::DX => "rdx",
+        Register::DI => "rdi",
+        Register::SI => "rsi",
+        Register::R8 => "r8",
+        Register::R9 => "r9",
+        Register::R10 => "r10",
+        Register::R11 => "r11",
+    })
+}
+
+fn show_byte_operand(op: &Operand) -> String {
     match op {
-        Operand::Register(Register::AX) => format!("%{}", "al"),
-        Operand::Register(Register::DX) => format!("%{}", "dl"),
-        Operand::Register(Register::R10) => format!("%{}", "r10b"),
-        Operand::Register(Register::R11) => format!("%{}", "r11b"),
+        Operand::Register(reg) => show_byte_reg(reg),
         _ => show_operand(op),
     }
 }
 
-fn show_operand(op: Operand) -> String {
+fn show_operand(op: &Operand) -> String {
     match op {
-        Operand::Register(reg) => format!(
-            "%{}",
-            match reg {
-                Register::AX => "eax",
-                Register::CX => "ecx",
-                Register::DX => "edx",
-                Register::R10 => "r10d",
-                Register::R11 => "r11d",
-            }
-        ),
-        Operand::Stack(amt) => format!("{}(%rbp)", -amt),
+        Operand::Register(reg) => show_reg(reg),
+        Operand::Stack(amt) => format!("{}(%rbp)", amt),
         Operand::Imm(val) => format!("${}", val),
         Operand::Pseudo(_) => {
             panic!("No Pseudo-registers should be in tree when outputing assembly")
@@ -155,7 +223,7 @@ fn show_operand(op: Operand) -> String {
     }
 }
 
-fn show_condition(cond: Condition) -> String {
+fn show_condition(cond: &Condition) -> String {
     match cond {
         Condition::E => "e".to_string(),
         Condition::NE => "ne".to_string(),

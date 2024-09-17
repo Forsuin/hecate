@@ -1,20 +1,39 @@
 use lir::*;
+use ty::{Scope, Symbol};
 
-pub fn fix_invalid_instructions(ast: &mut Program, stack_size: i32) -> Program {
-    let func = &mut ast.func;
-
-    func.instructions
-        .insert(0, Instruction::AllocateStack(stack_size));
-
+pub fn fix_invalid_instructions(program: &mut Program, symbols: &mut Scope<Symbol>) -> Program {
     Program {
-        func: fix_func(func),
+        funcs: program
+            .funcs
+            .iter()
+            .map(|func| fix_func(func, symbols))
+            .collect(),
     }
 }
 
-fn fix_func(func: &Function) -> Function {
-    Function {
+fn fix_func(func: &Func, symbols: &mut Scope<Symbol>) -> Func {
+    let stack_bytes = symbols.get(&func.name).unwrap().stack_frame_size;
+
+    let round_away_from_zero = |n: i32, x: i32| {
+        if x % n == 0 {
+            x
+        } else if x < 0 {
+            x - n - (x % n)
+        } else {
+            x + n - (x & n)
+        }
+    };
+
+    let mut instructions = vec![Instruction::AllocateStack(-round_away_from_zero(
+        16,
+        stack_bytes,
+    ))];
+
+    instructions.append(&mut fix_instructions(&func.instructions));
+
+    Func {
         name: func.name.clone(),
-        instructions: fix_instructions(&func.instructions),
+        instructions,
     }
 }
 
@@ -23,45 +42,57 @@ fn fix_instructions(instructions: &Vec<Instruction>) -> Vec<Instruction> {
 
     for i in instructions {
         match i {
-            Instruction::Mov { src, dest } => {
+            Instruction::Mov {
+                src: Operand::Stack(src),
+                dest: Operand::Stack(dest),
+            } => {
                 fixed_instr.push(Instruction::Mov {
-                    src: src.clone(),
+                    src: Operand::Stack(*src),
                     dest: Operand::Register(Register::R10),
                 });
                 fixed_instr.push(Instruction::Mov {
                     src: Operand::Register(Register::R10),
-                    dest: dest.clone(),
+                    dest: Operand::Stack(*dest),
                 });
             }
-            Instruction::Binary { op, src, dest } => {
-                if matches!(
-                    op,
-                    BinaryOp::Add | BinaryOp::Sub | BinaryOp::And | BinaryOp::Or | BinaryOp::Xor
-                ) {
-                    fixed_instr.push(Instruction::Mov {
-                        src: src.clone(),
-                        dest: Operand::Register(Register::R10),
-                    });
-                    fixed_instr.push(Instruction::Binary {
-                        op: op.clone(),
-                        src: Operand::Register(Register::R10),
-                        dest: dest.clone(),
-                    })
-                } else {
-                    fixed_instr.push(Instruction::Mov {
-                        src: dest.clone(),
-                        dest: Operand::Register(Register::R11),
-                    });
-                    fixed_instr.push(Instruction::Binary {
-                        op: op.clone(),
-                        src: src.clone(),
-                        dest: Operand::Register(Register::R11),
-                    });
-                    fixed_instr.push(Instruction::Mov {
-                        src: Operand::Register(Register::R11),
-                        dest: dest.clone(),
-                    })
-                }
+            Instruction::Binary {
+                op:
+                    op @ BinaryOp::Add
+                    | op @ BinaryOp::Sub
+                    | op @ BinaryOp::And
+                    | op @ BinaryOp::Or
+                    | op @ BinaryOp::Xor,
+                src: Operand::Stack(src),
+                dest: Operand::Stack(dest),
+            } => {
+                fixed_instr.push(Instruction::Mov {
+                    src: Operand::Stack(*src),
+                    dest: Operand::Register(Register::R10),
+                });
+                fixed_instr.push(Instruction::Binary {
+                    op: op.clone(),
+                    src: Operand::Register(Register::R10),
+                    dest: Operand::Stack(*dest),
+                });
+            }
+            Instruction::Binary {
+                op: BinaryOp::Mult,
+                src,
+                dest: Operand::Stack(dest),
+            } => {
+                fixed_instr.push(Instruction::Mov {
+                    src: Operand::Stack(*dest),
+                    dest: Operand::Register(Register::R11),
+                });
+                fixed_instr.push(Instruction::Binary {
+                    op: BinaryOp::Mult,
+                    src: src.clone(),
+                    dest: Operand::Register(Register::R11),
+                });
+                fixed_instr.push(Instruction::Mov {
+                    src: Operand::Register(Register::R11),
+                    dest: Operand::Stack(*dest),
+                });
             }
             Instruction::Idiv(Operand::Imm(val)) => {
                 fixed_instr.push(Instruction::Mov {

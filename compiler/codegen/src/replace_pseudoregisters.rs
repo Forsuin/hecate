@@ -1,113 +1,114 @@
 use std::collections::HashMap;
 
 use lir::*;
+use ty::{Scope, Symbol};
 
 #[derive(Debug)]
-pub struct PseudoReplacer {
+pub struct ReplacementState {
     // Offset from rbp, will be negative offset in emitted assembly
     current_offset: i32,
     offset_map: HashMap<String, i32>,
 }
 
-impl PseudoReplacer {
-    fn new() -> Self {
-        Self {
-            current_offset: 0,
-            offset_map: HashMap::new(),
-        }
+pub fn replace_psuedos(assm_ast: &Program, symbol_table: &mut Scope<Symbol>) -> Program {
+    Program {
+        funcs: assm_ast
+            .funcs
+            .iter()
+            .map(|func| replace_func(func, symbol_table))
+            .collect(),
     }
+}
 
-    fn replace_operand(&mut self, operand: &Operand) -> Operand {
-        match operand {
-            Operand::Pseudo(var) => match self.offset_map.get(var) {
+fn replace_func(func: &Func, symbol_table: &mut Scope<Symbol>) -> Func {
+    let mut state = ReplacementState {
+        current_offset: 0,
+        offset_map: HashMap::new(),
+    };
+    let fixed_instructions = func
+        .instructions
+        .iter()
+        .map(|instr| replace_instruction(instr, &mut state))
+        .collect();
+
+    let func_entry = symbol_table.get_mut(&func.name).unwrap();
+    func_entry.stack_frame_size = state.current_offset;
+
+    Func {
+        name: func.name.clone(),
+        instructions: fixed_instructions,
+    }
+}
+
+fn replace_instruction(instruction: &Instruction, state: &mut ReplacementState) -> Instruction {
+    match instruction {
+        Instruction::Mov { src, dest } => {
+            let src = replace_operand(src, state);
+            let dest = replace_operand(dest, state);
+            Instruction::Mov { src, dest }
+        }
+        Instruction::Unary { op, dest } => {
+            let dest = replace_operand(dest, state);
+            Instruction::Unary {
+                op: op.clone(),
+                dest,
+            }
+        }
+        Instruction::AllocateStack(amt) => Instruction::AllocateStack(*amt),
+        Instruction::Ret => Instruction::Ret,
+        Instruction::Binary { op, src, dest } => {
+            let src = replace_operand(src, state);
+            let dest = replace_operand(dest, state);
+            Instruction::Binary {
+                op: op.clone(),
+                src,
+                dest,
+            }
+        }
+        Instruction::Idiv(op) => {
+            let op = replace_operand(op, state);
+            Instruction::Idiv(op)
+        }
+        Instruction::Cdq => Instruction::Cdq,
+        Instruction::Cmp(first, second) => {
+            let first = replace_operand(first, state);
+            let second = replace_operand(second, state);
+            Instruction::Cmp(first, second)
+        }
+        Instruction::Jmp { label } => Instruction::Jmp {
+            label: label.clone(),
+        },
+        Instruction::JmpCond { condition, label } => Instruction::JmpCond {
+            condition: condition.clone(),
+            label: label.clone(),
+        },
+        Instruction::SetCond { condition, dest } => {
+            let dest = replace_operand(dest, state);
+            Instruction::SetCond {
+                condition: condition.clone(),
+                dest,
+            }
+        }
+        Instruction::Label(ident) => Instruction::Label(ident.clone()),
+        Instruction::DeallocateStack(amt) => Instruction::DeallocateStack(*amt),
+        Instruction::Push(op) => Instruction::Push(replace_operand(op, state)),
+        Instruction::Call(fun) => Instruction::Call(fun.clone()),
+    }
+}
+
+fn replace_operand(operand: &Operand, state: &mut ReplacementState) -> Operand {
+    match operand {
+        Operand::Pseudo(var) => {
+            match state.offset_map.get(var) {
                 None => {
-                    let new_offset = self.current_offset + 4;
-                    self.current_offset = new_offset;
-                    self.offset_map.insert(var.clone(), new_offset);
+                    let new_offset = state.current_offset - 4;
+                    state.current_offset = new_offset;
+                    state.offset_map.insert(var.clone(), new_offset);
                     Operand::Stack(new_offset)
                 }
                 Some(offset) => Operand::Stack(*offset),
-            },
-            _ => operand.clone(),
+            }
         }
-    }
-
-    fn replace_instruction(&mut self, instruction: &Instruction) -> Instruction {
-        match instruction {
-            Instruction::Mov { src, dest } => {
-                let src = self.replace_operand(src);
-                let dest = self.replace_operand(dest);
-                Instruction::Mov { src, dest }
-            }
-            Instruction::Unary { op, dest } => {
-                let dest = self.replace_operand(dest);
-                Instruction::Unary {
-                    op: op.clone(),
-                    dest,
-                }
-            }
-            Instruction::AllocateStack(_) => {
-                panic!("AllocateStack should not be present");
-            }
-            Instruction::Ret => Instruction::Ret,
-            Instruction::Binary { op, src, dest } => {
-                let src = self.replace_operand(src);
-                let dest = self.replace_operand(dest);
-                Instruction::Binary {
-                    op: op.clone(),
-                    src,
-                    dest,
-                }
-            }
-            Instruction::Idiv(op) => {
-                let op = self.replace_operand(op);
-                Instruction::Idiv(op)
-            }
-            Instruction::Cdq => Instruction::Cdq,
-            Instruction::Cmp(first, second) => {
-                let first = self.replace_operand(first);
-                let second = self.replace_operand(second);
-                Instruction::Cmp(first, second)
-            }
-            Instruction::Jmp { label } => Instruction::Jmp {
-                label: label.clone(),
-            },
-            Instruction::JmpCond { condition, label } => Instruction::JmpCond {
-                condition: condition.clone(),
-                label: label.clone(),
-            },
-            Instruction::SetCond { condition, dest } => {
-                let dest = self.replace_operand(dest);
-                Instruction::SetCond {
-                    condition: condition.clone(),
-                    dest,
-                }
-            }
-            Instruction::Label(ident) => {Instruction::Label(ident.clone())}
-        }
-    }
-
-    fn replace_func(&mut self, func: &Function) -> Function {
-        let mut fixed_instructions = vec![];
-
-        for i in &func.instructions {
-            fixed_instructions.push(self.replace_instruction(i));
-        }
-
-        Function {
-            name: func.name.clone(),
-            instructions: fixed_instructions,
-        }
-    }
-
-    pub fn replace_psuedos(assm_ast: &Program) -> (Program, i32) {
-        let mut state = PseudoReplacer::new();
-
-        (
-            Program {
-                func: state.replace_func(&assm_ast.func),
-            },
-            state.current_offset,
-        )
+        _ => operand.clone(),
     }
 }

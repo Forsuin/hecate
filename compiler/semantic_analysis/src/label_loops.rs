@@ -4,12 +4,17 @@ use unique_ident::make_label;
 use crate::sem_err::SemErr;
 
 pub fn label_loops(program: &mut TranslationUnit) -> Result<(), SemErr> {
-    label_func(&mut program.func)?;
+    for func in &mut program.funcs {
+        label_func(func)?;
+    }
     Ok(())
 }
 
-fn label_func(func: &mut Func) -> Result<(), SemErr> {
-    label_block(&mut func.body, None, None)?;
+fn label_func(func: &mut FuncDecl) -> Result<(), SemErr> {
+    if let Some(body) = &mut func.body {
+        label_block(body, None, None)?;
+    }
+
     Ok(())
 }
 
