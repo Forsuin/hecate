@@ -24,6 +24,12 @@ fn fix_func(func: &Func, symbols: &mut Scope<Symbol>) -> Func {
         }
     };
 
+    println!("stack frame size: {}", stack_bytes);
+    println!(
+        "rounded away from 0: {}",
+        round_away_from_zero(16, stack_bytes)
+    );
+
     let mut instructions = vec![Instruction::AllocateStack(-round_away_from_zero(
         16,
         stack_bytes,
