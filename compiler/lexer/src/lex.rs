@@ -1,4 +1,3 @@
-
 use std::str::Chars;
 
 use thiserror::Error;
@@ -169,7 +168,7 @@ impl<'a> Lexer<'a> {
                 None
             }
         })
-            .filter(|t| t.kind != TokenType::Whitespace)
+        .filter(|t| t.kind != TokenType::Whitespace)
     }
 
     fn scan_token(&mut self) -> Token {
@@ -204,7 +203,7 @@ impl<'a> Lexer<'a> {
                 '-' => {
                     self.advance();
                     TokenType::MinusMinus
-                },
+                }
                 '=' => {
                     self.advance();
                     TokenType::MinusEqual
@@ -215,86 +214,76 @@ impl<'a> Lexer<'a> {
                 '+' => {
                     self.advance();
                     TokenType::PlusPlus
-                },
+                }
                 '=' => {
                     self.advance();
                     TokenType::PlusEqual
                 }
-                _ => TokenType::Plus
+                _ => TokenType::Plus,
             },
             '*' => match self.peek() {
                 '=' => {
                     self.advance();
                     TokenType::StarEqual
                 }
-                _ => TokenType::Star
+                _ => TokenType::Star,
             },
             '/' => match self.peek() {
                 '=' => {
                     self.advance();
                     TokenType::SlashEqual
                 }
-                _ => TokenType::Slash
+                _ => TokenType::Slash,
             },
             '%' => match self.peek() {
                 '=' => {
                     self.advance();
                     TokenType::PercentEqual
                 }
-                _ => TokenType::Percent
+                _ => TokenType::Percent,
             },
-            '!' => {
-                match self.peek() {
-                    '=' => {
-                        self.advance();
-                        TokenType::BangEqual
-                    }
-                    _ => TokenType::Bang
+            '!' => match self.peek() {
+                '=' => {
+                    self.advance();
+                    TokenType::BangEqual
                 }
+                _ => TokenType::Bang,
             },
-            '=' => {
-                match self.peek() {
-                    '=' => {
-                        self.advance();
-                        TokenType::EqualEqual
-                    }
-                    _ => TokenType::Equal
+            '=' => match self.peek() {
+                '=' => {
+                    self.advance();
+                    TokenType::EqualEqual
                 }
-            }
-            '&' => {
-                match self.peek() {
-                    '&' => {
-                        self.advance();
-                        TokenType::AmpAmp
-                    }
-                    '=' => {
-                        self.advance();
-                        TokenType::AmpEqual
-                    }
-                    _ => TokenType::Amp
-                }
+                _ => TokenType::Equal,
             },
-            '|' => {
-                match self.peek() {
-                    '|' => {
-                        self.advance();
-                        TokenType::PipePipe
-                    }
-                    '=' => {
-                        self.advance();
-                        TokenType::PipeEqual
-                    }
-                    _ => TokenType::Pipe
+            '&' => match self.peek() {
+                '&' => {
+                    self.advance();
+                    TokenType::AmpAmp
                 }
+                '=' => {
+                    self.advance();
+                    TokenType::AmpEqual
+                }
+                _ => TokenType::Amp,
             },
-            '^' => {
-                match self.peek() {
-                    '=' => {
-                        self.advance();
-                        TokenType::XorEqual
-                    }
-                    _ => TokenType::Xor
+            '|' => match self.peek() {
+                '|' => {
+                    self.advance();
+                    TokenType::PipePipe
                 }
+                '=' => {
+                    self.advance();
+                    TokenType::PipeEqual
+                }
+                _ => TokenType::Pipe,
+            },
+            '^' => match self.peek() {
+                '=' => {
+                    self.advance();
+                    TokenType::XorEqual
+                }
+                _ => TokenType::Xor,
             },
             '<' => match self.peek() {
                 '<' => {
@@ -305,9 +294,9 @@ impl<'a> Lexer<'a> {
                             self.advance();
                             TokenType::LessLessEqual
                         }
-                        _ => TokenType::LessLess
+                        _ => TokenType::LessLess,
                     }
-                },
+                }
                 '=' => {
                     self.advance();
                     TokenType::LessEqual
@@ -323,7 +312,7 @@ impl<'a> Lexer<'a> {
                             self.advance();
                             TokenType::GreaterGreaterEqual
                         }
-                        _ => TokenType::GreaterGreater
+                        _ => TokenType::GreaterGreater,
                     }
                 }
                 '=' => {
@@ -420,8 +409,8 @@ impl<'a> Lexer<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::TokenType::*;
     use super::*;
+    use crate::TokenType::*;
 
     #[test]
     fn minus_minus() {
@@ -468,7 +457,18 @@ mod tests {
     #[test]
     fn compound_assignment() {
         let src = "+= -= *= /= %= &= |= ^= <<= >>=";
-        let expected = vec![PlusEqual, MinusEqual, StarEqual, SlashEqual, PercentEqual, AmpEqual, PipeEqual, XorEqual, LessLessEqual, GreaterGreaterEqual];
+        let expected = vec![
+            PlusEqual,
+            MinusEqual,
+            StarEqual,
+            SlashEqual,
+            PercentEqual,
+            AmpEqual,
+            PipeEqual,
+            XorEqual,
+            LessLessEqual,
+            GreaterGreaterEqual,
+        ];
 
         let mut lexer = Lexer::new(src);
         let tokens = lexer.tokenize();
@@ -576,7 +576,10 @@ mod tests {
     #[test]
     fn comma_func_decl() {
         let src = "int func(int first, int second);";
-        let expected = vec![Int, Identifier, OpenParen, Int, Identifier, Comma, Int, Identifier, CloseParen, Semicolon];
+        let expected = vec![
+            Int, Identifier, OpenParen, Int, Identifier, Comma, Int, Identifier, CloseParen,
+            Semicolon,
+        ];
 
         let mut lexer = Lexer::new(src);
         let tokens = lexer.tokenize();
