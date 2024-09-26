@@ -45,27 +45,25 @@ impl Parser {
 
     pub fn parse(&mut self) -> Result<TranslationUnit, ParseError> {
         Ok(TranslationUnit {
-            funcs: self.parse_func_decl_list()?,
+            decls: self.parse_decl_list()?,
         })
     }
 
-    fn parse_func_decl_list(&mut self) -> Result<Vec<FuncDecl>, ParseError> {
-        let mut funcs = vec![];
+    fn parse_decl_list(&mut self) -> Result<Vec<Decl>, ParseError> {
+        let mut decls = vec![];
 
         while let Some(_) = self.peek() {
             match self.parse_decl()? {
-                Decl::FuncDecl { func } => {
-                    funcs.push(func);
+                Decl::FuncDecl(func) => {
+                    decls.push(Decl::FuncDecl(func));
                 }
-                Decl::VarDecl { .. } => {
-                    return Err(ParseError::new(format!("Expected function declaration at top level, but found variable declaration instead")))
-                }
+                Decl::VarDecl(var) => decls.push(Decl::VarDecl(var)),
             }
         }
 
         self.expect_empty()?;
 
-        Ok(funcs)
+        Ok(decls)
     }
 
     fn parse_block(&mut self) -> Result<Block, ParseError> {
@@ -89,10 +87,9 @@ impl Parser {
 
     fn parse_block_item(&mut self) -> Result<BlockItem, ParseError> {
         match self.tokens.peek() {
-            Some(Token {
-                kind: TokenType::Int,
-                ..
-            }) => Ok(BlockItem::D(self.parse_decl()?)),
+            match_token_types!(TokenType::Int, TokenType::Static, TokenType::Extern) => {
+                Ok(BlockItem::D(self.parse_decl()?))
+            }
             Some(_) => Ok(BlockItem::S(self.parse_stmt()?)),
             None => Err(ParseError::new(
                 "Expected function body, but found end of file instead".to_string(),
@@ -102,15 +99,17 @@ impl Parser {
 
     fn parse_var_decl(&mut self) -> Result<VarDecl, ParseError> {
         match self.parse_decl()? {
-            Decl::FuncDecl{ .. } => Err(ParseError::new(format!(
+            Decl::FuncDecl { .. } => Err(ParseError::new(format!(
                 "Expected variable declaration but found function declaration"
             ))),
-            Decl::VarDecl{ var } => Ok(var),
+            Decl::VarDecl(var) => Ok(var),
         }
     }
 
     fn parse_decl(&mut self) -> Result<Decl, ParseError> {
-        self.expect(TokenType::Int)?;
+        let specifiers = self.parse_specifier_list()?;
+        let (_, storage_class) = self.parse_type_and_storage(specifiers)?;
+
         let ident = self.parse_ident()?;
 
         match self.peek() {
@@ -118,16 +117,78 @@ impl Parser {
             Some(Token {
                 kind: TokenType::OpenParen,
                 ..
-            }) => Ok(Decl::FuncDecl {
-                func: self.parse_rest_func_decl(ident)?,
-            }),
-            Some(_) => Ok(Decl::VarDecl {
-                var: self.parse_rest_var_decl(ident)?,
-            }),
+            }) => Ok(Decl::FuncDecl(
+                self.parse_rest_func_decl(ident, storage_class)?,
+            )),
+            Some(_) => Ok(Decl::VarDecl(
+                self.parse_rest_var_decl(ident, storage_class)?,
+            )),
         }
     }
 
-    fn parse_rest_func_decl(&mut self, name: String) -> Result<FuncDecl, ParseError> {
+    fn parse_specifier_list(&mut self) -> Result<Vec<Token>, ParseError> {
+        let mut specs = vec![];
+
+        loop {
+            match self.peek() {
+                match_token_types!(TokenType::Int, TokenType::Static, TokenType::Extern) => {
+                    specs.push(self.tokens.next().unwrap());
+                }
+                _ => break,
+            }
+        }
+
+        Ok(specs)
+    }
+
+    fn parse_type_and_storage(
+        &mut self,
+        specifiers: Vec<Token>,
+    ) -> Result<(ty::Type, Option<StorageClass>), ParseError> {
+        let (types, storage_classes): (Vec<_>, Vec<_>) = specifiers
+            .into_iter()
+            .partition(|spec| spec.kind == TokenType::Int);
+
+        if types.len() != 1 {
+            return Err(ParseError::new(format!(
+                "Expected one type specifier, found multiple: '{:?}'",
+                types
+            )));
+        }
+
+        if storage_classes.len() > 1 {
+            return Err(ParseError::new(format!(
+                "Expected one storage class, found multiple: '{:?}'",
+                storage_classes
+            )));
+        }
+
+        let ty = ty::Type::Int;
+        let mut storage_class = None;
+
+        if !storage_classes.is_empty() {
+            storage_class = Some(self.parse_storage_class(&storage_classes[0])?);
+        }
+
+        Ok((ty, storage_class))
+    }
+
+    fn parse_storage_class(&mut self, storage_token: &Token) -> Result<StorageClass, ParseError> {
+        match storage_token.kind {
+            TokenType::Static => Ok(StorageClass::Static),
+            TokenType::Extern => Ok(StorageClass::Extern),
+            _ => Err(ParseError::new(format!(
+                "Expected storage class but found '{:?}' instead",
+                storage_token.kind
+            ))),
+        }
+    }
+
+    fn parse_rest_func_decl(
+        &mut self,
+        name: String,
+        storage_class: Option<StorageClass>,
+    ) -> Result<FuncDecl, ParseError> {
         self.expect(TokenType::OpenParen)?;
 
         let mut param_list = vec![];
@@ -145,8 +206,13 @@ impl Parser {
                 }) => {
                     self.expect(TokenType::Comma)?;
 
-                    if self.peek().is_some_and(|token| token.kind == TokenType::CloseParen) {
-                        return Err(ParseError::new("Found trailing comma at end of parameter list".to_string()))
+                    if self
+                        .peek()
+                        .is_some_and(|token| token.kind == TokenType::CloseParen)
+                    {
+                        return Err(ParseError::new(
+                            "Found trailing comma at end of parameter list".to_string(),
+                        ));
                     }
                 }
                 Some(Token {
@@ -158,9 +224,9 @@ impl Parser {
                     param_list.push(self.parse_ident()?);
                 }
                 Some(Token {
-                         kind: TokenType::Void,
-                         ..
-                     }) => {
+                    kind: TokenType::Void,
+                    ..
+                }) => {
                     self.expect(TokenType::Void)?;
                 }
                 Some(Token {
@@ -187,7 +253,7 @@ impl Parser {
         {
             body = Some(self.parse_block()?);
         }
-            // function declaration with no definition
+        // function declaration with no definition
         else {
             self.expect(TokenType::Semicolon)?;
         }
@@ -196,10 +262,15 @@ impl Parser {
             ident: name,
             params: param_list,
             body,
+            storage_class,
         })
     }
 
-    fn parse_rest_var_decl(&mut self, name: String) -> Result<VarDecl, ParseError> {
+    fn parse_rest_var_decl(
+        &mut self,
+        name: String,
+        storage_class: Option<StorageClass>,
+    ) -> Result<VarDecl, ParseError> {
         let init;
 
         match self.tokens.peek() {
@@ -231,7 +302,11 @@ impl Parser {
             }
         }
 
-        Ok(VarDecl { name, init })
+        Ok(VarDecl {
+            name,
+            init,
+            storage_class,
+        })
     }
 
     fn parse_ident(&mut self) -> Result<String, ParseError> {
@@ -521,10 +596,9 @@ impl Parser {
 
     fn parse_for_init(&mut self) -> Result<ForInit, ParseError> {
         match self.peek() {
-            Some(Token {
-                kind: TokenType::Int,
-                ..
-            }) => Ok(ForInit::Decl(self.parse_var_decl()?)),
+            match_token_types!(TokenType::Int, TokenType::Static, TokenType::Extern) => {
+                Ok(ForInit::Decl(self.parse_var_decl()?))
+            }
             Some(_) => Ok(ForInit::Expr(
                 self.parse_optional_expr(TokenType::Semicolon)?,
             )),
@@ -683,15 +757,17 @@ impl Parser {
                 let ident = ident.clone();
                 self.expect(TokenType::Identifier)?;
 
-                if let Some(Token { kind: TokenType::OpenParen, .. } ) = self.peek() {
+                if let Some(Token {
+                    kind: TokenType::OpenParen,
+                    ..
+                }) = self.peek()
+                {
                     let args = self.parse_arg_list()?;
 
                     Ok(Expr::FunctionCall { func: ident, args })
-                }
-                else {
+                } else {
                     Ok(Expr::Var(ident))
                 }
-
             }
             t => Err(ParseError::new(format!(
                 "Expected a factor, found '{:?}'",
@@ -708,22 +784,29 @@ impl Parser {
         loop {
             match self.peek() {
                 None => {
-                    return Err(ParseError::new("Expected function argument, found end of file instead".to_string()))
+                    return Err(ParseError::new(
+                        "Expected function argument, found end of file instead".to_string(),
+                    ))
                 }
                 Some(Token {
                     kind: TokenType::Comma,
                     ..
-                     }) => {
+                }) => {
                     self.expect(TokenType::Comma)?;
 
-                    if self.peek().is_some_and(|token| token.kind == TokenType::CloseParen) {
-                        return Err(ParseError::new("Found trailing comma at end of argument list".to_string()))
+                    if self
+                        .peek()
+                        .is_some_and(|token| token.kind == TokenType::CloseParen)
+                    {
+                        return Err(ParseError::new(
+                            "Found trailing comma at end of argument list".to_string(),
+                        ));
                     }
                 }
                 Some(Token {
                     kind: TokenType::CloseParen,
                     ..
-                     }) => {
+                }) => {
                     self.expect(TokenType::CloseParen)?;
                     break;
                 }
@@ -1386,6 +1469,66 @@ mod tests {
                 }),
                 label: "".to_string()
             }
+        )
+    }
+
+    #[test]
+    fn static_var_decl() {
+        let src = "static int a = 3;";
+        let tokens = Lexer::new(src).tokenize().collect();
+
+        let ast = Parser::new(tokens).parse_decl().unwrap();
+
+        assert_eq!(
+            ast,
+            Decl::VarDecl(VarDecl {
+                name: "a".to_string(),
+                init: Some(Expr::Assignment {
+                    lvalue: Box::new(Expr::Var("a".to_string())),
+                    expr: Box::new(Expr::Constant(3))
+                }),
+                storage_class: Some(StorageClass::Static)
+            })
+        )
+    }
+
+    #[test]
+    fn static_var_decl_reversed_specifiers() {
+        let src = "int static a = 3;";
+        let tokens = Lexer::new(src).tokenize().collect();
+
+        let ast = Parser::new(tokens).parse_decl().unwrap();
+
+        assert_eq!(
+            ast,
+            Decl::VarDecl(VarDecl {
+                name: "a".to_string(),
+                init: Some(Expr::Assignment {
+                    lvalue: Box::new(Expr::Var("a".to_string())),
+                    expr: Box::new(Expr::Constant(3))
+                }),
+                storage_class: Some(StorageClass::Static)
+            })
+        )
+    }
+
+    #[test]
+    fn extern_var_decl() {
+        let src = "static int a = 3;";
+        let tokens = Lexer::new(src).tokenize().collect();
+
+        let ast = Parser::new(tokens).parse_decl().unwrap();
+
+        assert_eq!(
+            ast,
+            Decl::VarDecl(VarDecl {
+                name: "a".to_string(),
+                init: Some(Expr::Assignment {
+                    lvalue: Box::new(Expr::Var("a".to_string())),
+                    expr: Box::new(Expr::Constant(3))
+                }),
+                storage_class: Some(StorageClass::Extern)
+            })
         )
     }
 }

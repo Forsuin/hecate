@@ -191,6 +191,7 @@ dependencies = [
  "ast",
  "lexer",
  "thiserror",
+ "ty",
 ]
 
 [[package]]

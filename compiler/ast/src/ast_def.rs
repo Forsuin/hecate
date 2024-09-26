@@ -2,7 +2,13 @@
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct TranslationUnit {
-    pub funcs: Vec<FuncDecl>,
+    pub decls: Vec<Decl>,
+}
+
+#[derive(Debug, Eq, PartialEq, Clone)]
+pub enum Decl {
+    FuncDecl(FuncDecl),
+    VarDecl(VarDecl),
 }
 
 #[derive(Debug, Eq, PartialEq, Clone)]
@@ -10,6 +16,20 @@ pub struct FuncDecl {
     pub ident: String,
     pub params: Vec<String>,
     pub body: Option<Block>,
+    pub storage_class: Option<StorageClass>,
+}
+
+#[derive(Debug, Eq, PartialEq, Clone)]
+pub struct VarDecl {
+    pub name: String,
+    pub init: Option<Expr>,
+    pub storage_class: Option<StorageClass>,
+}
+
+#[derive(Debug, Eq, PartialEq, Clone, Copy)]
+pub enum StorageClass {
+    Static,
+    Extern,
 }
 
 #[derive(Debug, Eq, PartialEq, Clone)]
@@ -21,18 +41,6 @@ pub struct Block {
 pub enum BlockItem {
     S(Stmt),
     D(Decl),
-}
-
-#[derive(Debug, Eq, PartialEq, Clone)]
-pub enum Decl {
-    FuncDecl { func: FuncDecl },
-    VarDecl { var: VarDecl },
-}
-
-#[derive(Debug, Eq, PartialEq, Clone)]
-pub struct VarDecl {
-    pub name: String,
-    pub init: Option<Expr>,
 }
 
 #[derive(Debug, Eq, PartialEq, Clone)]
