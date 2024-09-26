@@ -128,6 +128,8 @@ pub enum TokenType {
     Switch,
     Case,
     Default,
+    Static,
+    Extern,
 
     // Informational
     Whitespace,
@@ -393,6 +395,8 @@ impl<'a> Lexer<'a> {
             "switch" => TokenType::Switch,
             "case" => TokenType::Case,
             "default" => TokenType::Default,
+            "static" => TokenType::Static,
+            "extern" => TokenType::Extern,
             _ => TokenType::Identifier,
         }
     }
