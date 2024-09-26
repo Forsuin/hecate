@@ -587,4 +587,28 @@ mod tests {
 
         assert_eq!(tokens, expected)
     }
+
+    #[test]
+    fn static_kw() {
+        let src = "static int x;";
+        let expected = vec![Static, Int, Identifier, Semicolon];
+
+        let mut lexer = Lexer::new(src);
+        let tokens = lexer.tokenize();
+        let tokens: Vec<_> = tokens.map(|t| t.kind).collect();
+
+        assert_eq!(tokens, expected)
+    }
+
+    #[test]
+    fn extern_kw() {
+        let src = "extern int x;";
+        let expected = vec![Extern, Int, Identifier, Semicolon];
+
+        let mut lexer = Lexer::new(src);
+        let tokens = lexer.tokenize();
+        let tokens: Vec<_> = tokens.map(|t| t.kind).collect();
+
+        assert_eq!(tokens, expected)
+    }
 }
