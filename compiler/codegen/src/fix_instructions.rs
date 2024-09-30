@@ -1,7 +1,7 @@
 use lir::*;
-use ty::{Scope, Symbol};
+use ty::SymbolTable;
 
-pub fn fix_invalid_instructions(program: &mut Program, symbols: &mut Scope<Symbol>) -> Program {
+pub fn fix_invalid_instructions(program: &mut Program, symbols: &mut SymbolTable) -> Program {
     Program {
         funcs: program
             .funcs
@@ -11,8 +11,9 @@ pub fn fix_invalid_instructions(program: &mut Program, symbols: &mut Scope<Symbo
     }
 }
 
-fn fix_func(func: &Func, symbols: &mut Scope<Symbol>) -> Func {
-    let stack_bytes = symbols.get(&func.name).unwrap().stack_frame_size;
+fn fix_func(func: &Func, symbols: &mut SymbolTable) -> Func {
+    let stack_bytes = symbols.get_bytes_required(&func.name).unwrap();
+
 
     let round_away_from_zero = |n: i32, x: i32| {
         if x % n == 0 {

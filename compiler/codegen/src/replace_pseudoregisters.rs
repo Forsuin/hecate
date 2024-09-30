@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use lir::*;
-use ty::{Scope, Symbol};
+use ty::SymbolTable;
 
 #[derive(Debug)]
 pub struct ReplacementState {
@@ -10,7 +10,7 @@ pub struct ReplacementState {
     offset_map: HashMap<String, i32>,
 }
 
-pub fn replace_psuedos(assm_ast: &Program, symbol_table: &mut Scope<Symbol>) -> Program {
+pub fn replace_psuedos(assm_ast: &Program, symbol_table: &mut SymbolTable) -> Program {
     Program {
         funcs: assm_ast
             .funcs
@@ -20,7 +20,7 @@ pub fn replace_psuedos(assm_ast: &Program, symbol_table: &mut Scope<Symbol>) -> 
     }
 }
 
-fn replace_func(func: &Func, symbol_table: &mut Scope<Symbol>) -> Func {
+fn replace_func(func: &Func, symbol_table: &mut SymbolTable) -> Func {
     let mut state = ReplacementState {
         current_offset: 0,
         offset_map: HashMap::new(),
@@ -31,8 +31,7 @@ fn replace_func(func: &Func, symbol_table: &mut Scope<Symbol>) -> Func {
         .map(|instr| replace_instruction(instr, &mut state))
         .collect();
 
-    let func_entry = symbol_table.get_mut(&func.name).unwrap();
-    func_entry.stack_frame_size = state.current_offset;
+    symbol_table.set_bytes_required(&func.name, state.current_offset).unwrap();
 
     Func {
         name: func.name.clone(),

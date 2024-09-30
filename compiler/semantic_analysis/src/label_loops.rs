@@ -4,8 +4,13 @@ use unique_ident::make_label;
 use crate::sem_err::SemErr;
 
 pub fn label_loops(program: &mut TranslationUnit) -> Result<(), SemErr> {
-    for func in &mut program.funcs {
-        label_func(func)?;
+    for decl in &mut program.decls {
+        match decl {
+            Decl::FuncDecl(func) => {
+                label_func(func)?;
+            }
+            Decl::VarDecl(_) => {}
+        }
     }
     Ok(())
 }

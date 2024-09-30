@@ -8,8 +8,13 @@ use crate::sem_err::*;
 type CaseMap = HashMap<Option<i32>, String>;
 
 pub fn analyze_switches(program: &mut TranslationUnit) -> SemanticResult<()> {
-    for func in &mut program.funcs {
-        analyze_func(func)?
+    for decl in &mut program.decls {
+        match decl {
+            Decl::FuncDecl(func) => {
+                analyze_func(func)?
+            }
+            Decl::VarDecl(_) => {}
+        }
     }
 
     Ok(())

@@ -5,20 +5,66 @@ use crate::sem_err::*;
 
 pub struct TypeChecker {
     // map of symbols in current scope
-    pub symbols: Scope<Symbol>,
+    pub symbols: SymbolTable,
 }
 
 impl TypeChecker {
     pub fn new() -> Self {
         Self {
-            symbols: Scope::new(),
+            symbols: SymbolTable::new(),
         }
     }
 
     pub fn check(&mut self, program: &TranslationUnit) -> SemanticResult<()> {
-        for func in &program.funcs {
-            self.check_func_decl(func)?
+        for decl in &program.decls {
+            match decl {
+                Decl::FuncDecl(func) => self.check_func_decl(func)?,
+                Decl::VarDecl(var) => self.check_file_scope_var_decl(var)?,
+            }
         }
+
+        Ok(())
+    }
+
+    fn check_file_scope_var_decl(&mut self, var: &VarDecl) -> SemanticResult<()> {
+        let init = match var.init {
+            Some(Expr::Constant(c)) => InitialVal::Initial(c),
+            None => if var.storage_class == Some(StorageClass::Extern) { InitialVal::NoInit } else { InitialVal::Tentative },
+            Some(_) => return Err(SemErr::new(format!("File scope variable '{}' has non-constant initializer", var.name)))
+        };
+
+        let global = var.storage_class != Some(StorageClass::Static);
+
+        let old_decl = self.symbols.get(&var.name);
+
+        let (global, init) = match old_decl {
+            None => (global, init),
+            Some(decl) => {
+                if decl.t != Type::Int {
+                    Err(SemErr::new(format!("Function '{}' redeclared as variable", var.name)))?;
+                }
+
+                match decl.attrs {
+                    IdentifierAttr::Static { init: prev_init, global: prev_global } => {
+                        let global = if var.storage_class == Some(StorageClass::Extern) { prev_global } else if global == prev_global { global } else { return Err(SemErr::new(format!("Conflicting variable linkage for: '{}'", var.name))); };
+                        
+                        let init = match (prev_init, init) {
+                            (InitialVal::Initial(_), InitialVal::Initial(_)) => {
+                                return Err(SemErr::new(format!("Conflicting global variable definition: {}", var.name)));
+                            },
+                            (InitialVal::Initial(_), _) => init,
+                            (InitialVal::Tentative, InitialVal::Tentative | InitialVal::NoInit) => InitialVal::Tentative,
+                            (_, InitialVal::Initial(_)) | (InitialVal::NoInit, _) => init
+                        };
+
+                        (global, init)
+                    },
+                    _ => return Err(SemErr::new(format!("Internal Error, file-scope variable previously declared as variable or function: {}", var.name))),
+                }
+            }
+        };
+
+        self.symbols.add_static_var(var.name.clone(), Type::Int, global, init);
 
         Ok(())
     }
@@ -28,61 +74,44 @@ impl TypeChecker {
             param_count: decl.params.len(),
         };
         let has_body = decl.body.is_some();
-        let mut already_defined = false;
+        let mut defined = false;
+        let mut global = decl.storage_class != Some(StorageClass::Static);
 
-        if self.symbols.contains_key(&decl.ident) {
+        if self.symbols.is_defined(&decl.ident) {
             let old_decl = self.symbols.get(&decl.ident).unwrap();
-            let Type::Func(old_decl_func) = &old_decl.t else {
-                return Err(SemErr::new(format!(
-                    "Expected a function declaration, instead found {:?}",
-                    old_decl
-                )));
-            };
 
-            if old_decl_func.param_count != fun_type.param_count {
-                return Err(SemErr::new(format!(
-                    "Incompatible function declarations: {}",
-                    decl.ident
-                )));
+            if old_decl.t != Type::Func(fun_type.clone()) {
+                return Err(SemErr::new(format!("Redeclared '{}, Type: {:?}' with a different type: '{}'", decl.ident, old_decl.t, decl.params.len())));
             }
 
-            already_defined = old_decl.init_type == InitType::Definition;
-            if already_defined && has_body {
-                return Err(SemErr::new(format!(
-                    "Function is defined more than once: {}",
-                    decl.ident
-                )));
+            match old_decl.attrs {
+                IdentifierAttr::Func { defined: already_defined, global: already_global, .. } => {
+                    if already_defined && has_body {
+                        return Err(SemErr::new(format!("Defined '{}' with body multiple times", decl.ident)));
+                    }
+                    else if already_global && decl.storage_class == Some(StorageClass::Static) {
+                        return Err(SemErr::new(format!("Static declaration of '{}' follow non-static declaration", decl.ident)));
+                    }
+                    else {
+                        defined = already_defined || has_body;
+                        global = already_global;
+                    }
+                }
+                _ => return Err(SemErr::new(format!("Symbol '{}' has function type, but not function attributes", decl.ident)))
             }
         }
+        else {
+            defined = has_body;
+        }
 
-        self.symbols.insert(
-            decl.ident.clone(),
-            Symbol {
-                t: Type::Func(FuncType {
-                    param_count: decl.params.len(),
-                }),
-                init_type: if already_defined || has_body {
-                    InitType::Definition
-                } else {
-                    InitType::Declaration
-                },
-                stack_frame_size: 0,
-            },
-        );
+        self.symbols.add_func(decl.ident.clone(), Type::Func(fun_type), global, defined);
 
         if let Some(body) = &decl.body {
             for param in decl.params.clone() {
-                self.symbols.insert(
-                    param,
-                    Symbol {
-                        t: Type::Int,
-                        init_type: InitType::Declaration,
-                        stack_frame_size: 0,
-                    },
-                );
+                self.symbols.add_automatic_var(param, Type::Int);
             }
 
-            self.check_block(body)?
+            self.check_block(body)?;
         }
 
         Ok(())
@@ -102,38 +131,60 @@ impl TypeChecker {
                 self.check_stmt(stmt)?;
             }
             BlockItem::D(decl) => {
-                self.check_decl(decl)?;
+                self.check_local_decl(decl)?;
             }
         }
 
         Ok(())
     }
 
-    fn check_decl(&mut self, decl: &Decl) -> SemanticResult<()> {
+    fn check_local_decl(&mut self, decl: &Decl) -> SemanticResult<()> {
         match decl {
-            Decl::FuncDecl { func } => {
+            Decl::FuncDecl(func)=> {
                 self.check_func_decl(func)?;
             }
-            Decl::VarDecl { var } => {
-                self.check_var_decl(var)?;
+            Decl::VarDecl(var) => {
+                self.check_local_var_decl(var)?;
             }
         }
 
         Ok(())
     }
 
-    fn check_var_decl(&mut self, var: &VarDecl) -> SemanticResult<()> {
-        self.symbols.insert(
-            var.name.clone(),
-            Symbol {
-                t: Type::Int,
-                init_type: InitType::Declaration,
-                stack_frame_size: 0,
-            },
-        );
+    fn check_local_var_decl(&mut self, var: &VarDecl) -> SemanticResult<()> {
+        match var.storage_class {
+            Some(StorageClass::Extern) => {
+                if var.init.is_some() {
+                    return Err(SemErr::new(format!("Initializer on local extern variable declaration: '{}'", var.name)));
+                }
 
-        if let Some(init) = &var.init {
-            self.check_expr(init)?;
+                match self.symbols.get(&var.name) {
+                    None => {
+                        self.symbols.add_static_var(var.name.clone(), Type::Int, true, InitialVal::NoInit);
+                    }
+                    Some(old_decl) => {
+                        if old_decl.t != Type::Int {
+                            return Err(SemErr::new(format!("Function '{}' redeclared as variable", var.name)));
+                        }
+                    }
+                }
+            },
+            Some(StorageClass::Static) => {
+                let init_val = match var.init {
+                    Some(Expr::Constant(i)) => InitialVal::Initial(i),
+                    None => InitialVal::Initial(0),
+                    Some(_) => return Err(SemErr::new(format!("Non-constant initializer on local static variable: '{}'", var.name)))
+                };
+
+                self.symbols.add_static_var(var.name.clone(), Type::Int, false, init_val);
+            },
+            None => {
+                self.symbols.add_automatic_var(var.name.clone(), Type::Int);
+                match &var.init {
+                    Some(init) => self.check_expr(init)?,
+                    None => {}
+                }
+            }
         }
 
         Ok(())
@@ -185,8 +236,15 @@ impl TypeChecker {
                 ..
             } => {
                 match init {
+                    ForInit::Decl(VarDecl {
+                                      storage_class: Some(_),
+                                      name,
+                                      ..
+                                  }) => {
+                        return Err(SemErr::new(format!("Storage class not permitted on variable declaration in for-loop: '{}'", name)));
+                    }
                     ForInit::Decl(decl) => {
-                        self.check_var_decl(decl)?;
+                        self.check_local_var_decl(decl)?;
                     }
                     ForInit::Expr(expr) => {
                         if let Some(expr) = expr {
@@ -223,13 +281,14 @@ impl TypeChecker {
     fn check_expr(&mut self, expr: &Expr) -> SemanticResult<()> {
         match expr {
             Expr::Var(var) => {
+
                 let var_type = &self.symbols.get(var).unwrap().t;
 
                 match var_type {
                     Type::Int => {}
                     Type::Func(_) => {
                         return Err(SemErr::new(format!(
-                            "Tried to use variable '{}' as a function",
+                            "Tried to use function '{}' as a variable",
                             var
                         )));
                     }

@@ -9,15 +9,22 @@ pub struct FuncType {
     pub param_count: usize,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub enum InitType {
-    Declaration,
-    Definition,
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub enum InitialVal {
+    Tentative,
+    Initial(i32),
+    NoInit,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum IdentifierAttr {
+    Func { defined: bool, global: bool, stack_frame_size: i32 },
+    Static { init: InitialVal, global: bool },
+    Local,
 }
 
 #[derive(Debug, PartialEq)]
 pub struct Symbol {
     pub t: Type,
-    pub init_type: InitType,
-    pub stack_frame_size: i32,
+    pub attrs: IdentifierAttr,
 }

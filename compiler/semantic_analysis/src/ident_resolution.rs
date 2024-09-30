@@ -9,7 +9,7 @@ use crate::sem_err::{SemErr, SemanticResult};
 struct IdentEntry {
     pub unique_name: String,
     pub from_current_scope: bool,
-    pub has_ext_linkage: bool,
+    pub has_linkage: bool,
 }
 
 type IdentMap = HashMap<String, IdentEntry>;
@@ -17,8 +17,11 @@ type IdentMap = HashMap<String, IdentEntry>;
 pub fn resolve(program: &mut TranslationUnit) -> SemanticResult<()> {
     let mut ident_map = IdentMap::new();
 
-    for func in &mut program.funcs {
-        resolve_func_decl(func, &mut ident_map)?;
+    for decl in &mut program.decls {
+        match decl {
+            Decl::FuncDecl(func) => resolve_func_decl(func, &mut ident_map)?,
+            Decl::VarDecl(var) => resolve_file_scope_var(var, &mut ident_map)?,
+        }
     }
 
     Ok(())
@@ -28,7 +31,7 @@ fn resolve_func_decl(func: &mut FuncDecl, ident_map: &mut IdentMap) -> SemanticR
     if ident_map.contains_key(&func.ident) {
         let prev_entry = ident_map.get(&func.ident).unwrap();
 
-        if prev_entry.from_current_scope && (!prev_entry.has_ext_linkage) {
+        if prev_entry.from_current_scope && (!prev_entry.has_linkage) {
             return Err(SemErr::new(format!(
                 "Duplicate function declaration: {}",
                 func.ident
@@ -41,7 +44,7 @@ fn resolve_func_decl(func: &mut FuncDecl, ident_map: &mut IdentMap) -> SemanticR
         IdentEntry {
             unique_name: func.ident.clone(),
             from_current_scope: true,
-            has_ext_linkage: true,
+            has_linkage: true,
         },
     );
 
@@ -58,42 +61,62 @@ fn resolve_func_decl(func: &mut FuncDecl, ident_map: &mut IdentMap) -> SemanticR
     Ok(())
 }
 
-fn resolve_param(param: &mut String, ident_map: &mut IdentMap) -> SemanticResult<()> {
-    resolve_local_var(param, ident_map)
+fn resolve_file_scope_var(var: &mut VarDecl, ident_map: &mut IdentMap) -> SemanticResult<()> {
+    ident_map.insert(
+        var.name.clone(),
+        IdentEntry {
+            unique_name: var.name.clone(),
+            from_current_scope: true,
+            has_linkage: true,
+        },
+    );
+
+    Ok(())
 }
 
-fn resolve_local_var(name: &mut String, ident_map: &mut IdentMap) -> SemanticResult<()> {
-    match ident_map.get(name) {
-        Some(IdentEntry {
-            from_current_scope: true,
-            ..
-        }) => {
-            // var is defined in current scope
-            Err(SemErr::new(format!(
-                "Duplicate variable declaration: {}",
-                name
-            )))
-        }
-        _ => {
-            let unique_name = make_temp_name(name);
-            ident_map.insert(
-                name.clone(),
-                IdentEntry {
-                    unique_name: unique_name.clone(),
-                    from_current_scope: true,
-                    has_ext_linkage: false,
-                },
-            );
+fn resolve_param(param: &mut String, ident_map: &mut IdentMap) -> SemanticResult<()> {
+    resolve_local_var(param, &None, ident_map)
+}
 
-            *name = unique_name;
-
-            Ok(())
+fn resolve_local_var(
+    var: &mut String,
+    storage_class: &Option<StorageClass>,
+    ident_map: &mut IdentMap,
+) -> SemanticResult<()> {
+    match ident_map.get(var) {
+        None => {}
+        Some(prev_entry) => {
+            if prev_entry.from_current_scope {
+                if !(prev_entry.has_linkage && *storage_class == Some(StorageClass::Extern)) {
+                    return Err(SemErr::new(format!("Conflicting local declarations for variable: '{}'", var)));
+                }
+            }
         }
     }
+
+    if *storage_class == Some(StorageClass::Extern) {
+        ident_map.insert(var.clone(), IdentEntry {
+            unique_name: var.clone(),
+            from_current_scope: true,
+            has_linkage: true,
+        });
+    }
+    else {
+        let unique_name = make_temp_name(var);
+        ident_map.insert(var.clone(), IdentEntry {
+            unique_name: unique_name.clone(),
+            from_current_scope: true,
+            has_linkage: false,
+        });
+
+        *var = unique_name;
+    }
+
+    Ok(())
 }
 
 fn resolve_local_var_decl(var: &mut VarDecl, ident_map: &mut IdentMap) -> SemanticResult<()> {
-    resolve_local_var(&mut var.name, ident_map)?;
+    resolve_local_var(&mut var.name, &var.storage_class, ident_map)?;
 
     if let Some(init) = &mut var.init {
         resolve_expr(init, ident_map)?;
@@ -121,16 +144,21 @@ fn resolve_block_item(item: &mut BlockItem, ident_map: &mut IdentMap) -> Semanti
 
 fn resolve_decl(decl: &mut Decl, ident_map: &mut IdentMap) -> SemanticResult<()> {
     match decl {
-        Decl::VarDecl { var } => resolve_local_var_decl(var, ident_map),
-        Decl::FuncDecl {
-            func:
-                FuncDecl {
-                    ident,
-                    body: Some(_),
-                    ..
-                },
-        } => Err(SemErr::new(format!("Illegal nested function: {}", ident))),
-        Decl::FuncDecl { func } => resolve_func_decl(func, ident_map),
+        Decl::VarDecl(var) => resolve_local_var_decl(var, ident_map),
+        Decl::FuncDecl(FuncDecl {
+            ident,
+            body: Some(_),
+            ..
+        }) => Err(SemErr::new(format!("Illegal nested function: {}", ident))),
+        Decl::FuncDecl(FuncDecl {
+            ident,
+            storage_class: Some(StorageClass::Static),
+            ..
+        }) => Err(SemErr::new(format!(
+            "static keyword not allowed on local function definitions: '{:?}'",
+            ident
+        ))),
+        Decl::FuncDecl(func) => resolve_func_decl(func, ident_map),
     }
 }
 
@@ -329,7 +357,7 @@ fn copy_ident_map(ident_map: &IdentMap) -> IdentMap {
                     unique_name: entry.unique_name.clone(),
                     from_current_scope: false,
 
-                    has_ext_linkage: entry.has_ext_linkage,
+                    has_linkage: entry.has_linkage,
                 },
             )
         })

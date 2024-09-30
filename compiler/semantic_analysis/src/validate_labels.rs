@@ -5,8 +5,13 @@ use ast::*;
 use crate::sem_err::*;
 
 pub fn validate_labels(program: &mut TranslationUnit) -> SemanticResult<()> {
-    for func in &mut program.funcs {
-        Ok(validate_func(func)?)?
+    for decl in &mut program.decls {
+        match decl {
+            Decl::FuncDecl(func) => {
+                validate_func(func)?;
+            }
+            Decl::VarDecl(_) => {}
+        }
     }
 
     Ok(())

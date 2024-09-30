@@ -1,7 +1,7 @@
-use std::collections::HashMap;
+
 pub use types::*;
+pub use scope::*;
 
 pub mod types;
-
-pub type Scope<T> = HashMap<String, T>;
+pub mod scope;
 
