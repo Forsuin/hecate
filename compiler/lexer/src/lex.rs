@@ -10,6 +10,8 @@ pub enum LexError {
     InvalidIdentifier,
     #[error("unterminated string")]
     UnterminatedString,
+    #[error("invalid suffix")]
+    InvalidSuffix(String),
 }
 
 #[derive(Debug, Clone)]
@@ -56,6 +58,7 @@ impl PartialEq for Token {
 pub enum TokenValue {
     None,
     Integer(i32),
+    Long(i64),
     String(String),
     Ident(String),
     Error(LexError),
@@ -114,6 +117,7 @@ pub enum TokenType {
 
     // Keywords
     Int,
+    Long,
     If,
     Else,
     Void,
@@ -135,9 +139,15 @@ pub enum TokenType {
     Eof,
     InvalidIdent,
     Unknown,
+    Error,
 }
 
 const EOF: char = '\0';
+
+enum ConstType {
+    Int,
+    Long,
+}
 
 pub struct Lexer<'a> {
     /// Source Text
@@ -336,7 +346,21 @@ impl<'a> Lexer<'a> {
 
         let token_value = match token_type {
             TokenType::Constant => {
-                TokenValue::Integer(self.source[start..end].parse::<i32>().unwrap())
+                let val = self.convert_constant_value(&self.source[start..end]);
+
+                match val {
+                    Ok(val) => val,
+                    Err(e) => {
+                        return Token::new(
+                            TokenType::Error,
+                            start,
+                            end,
+                            TokenValue::Error(e),
+                            self.line,
+                            col,
+                        )
+                    }
+                }
             }
             TokenType::Identifier => TokenValue::Ident(self.source[start..end].to_string()),
             TokenType::Unknown => TokenValue::Error(LexError::UnexpectedChar),
@@ -347,15 +371,57 @@ impl<'a> Lexer<'a> {
         Token::new(token_type, start, end, token_value, self.line, col)
     }
 
+    fn convert_constant_value(&mut self, source: &str) -> Result<TokenValue, LexError> {
+        let suffix = source.trim_start_matches(|c| char::is_numeric(c));
+        // get just prefix, if no suffix to strip, just use source
+        let prefix = source.strip_suffix(|c| char::is_alphabetic(c)).unwrap_or(source);
+
+        // check if constant ends with suffix
+        let const_type = match suffix {
+            "" => ConstType::Int,
+            suffix => self.check_valid_suffix(suffix)?,
+        };
+
+
+
+        Ok(match const_type {
+            ConstType::Int => {
+                // try to parse as an int, but automatically convert to long if too big
+                match prefix.parse::<i32>() {
+                    Ok(val) => TokenValue::Integer(val),
+                    Err(_) => TokenValue::Long(prefix.parse::<i64>().unwrap()),
+                }
+            }
+            ConstType::Long => TokenValue::Long(prefix.parse::<i64>().unwrap()),
+        })
+    }
+
+    fn check_valid_suffix(&mut self, source: &str) -> Result<ConstType, LexError> {
+        match source {
+            "" => Ok(ConstType::Int),
+            "l" | "L" | "ll" | "LL" => Ok(ConstType::Long),
+            suffix => Err(LexError::InvalidSuffix(suffix.to_string())),
+        }
+    }
+
     fn number(&mut self) -> TokenType {
         while self.peek().is_ascii_digit() {
             self.advance();
         }
 
-        // if number is not followed by whitespace or semicolon, consume until next whitespace and return an error
-        if !self.peek().is_whitespace() && self.peek() != ';' {
-            while self.peek().is_alphanumeric() {
-                self.advance();
+        // also consume suffix
+        loop {
+            match self.peek() {
+                // suffixes are ok
+                'l' | 'L' => {
+                    self.advance();
+                }
+                // other identifier characters are not ok
+                c if c.is_alphabetic()  => return TokenType::Error,
+                '_' => return TokenType::Error,
+
+                // everything else is ok
+                _ => break,
             }
         }
 
@@ -371,6 +437,7 @@ impl<'a> Lexer<'a> {
 
         match text.as_str() {
             "int" => TokenType::Int,
+            "long" => TokenType::Long,
             "if" => TokenType::If,
             "else" => TokenType::Else,
             "void" => TokenType::Void,
