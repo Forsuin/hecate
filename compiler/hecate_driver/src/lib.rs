@@ -1,5 +1,5 @@
-use std::{fs::read_to_string, path::Path, process::Command};
 use std::io::Write;
+use std::{fs::read_to_string, path::Path, process::Command};
 
 use anyhow::{Ok, Result};
 use clap::{Args, Parser as ClapParser};
@@ -10,7 +10,7 @@ use emission::output;
 use lexer::{Lexer, TokenType};
 use mir::{debug_tacky, gen_tacky};
 use parser::Parser;
-use semantic_analysis::{analyze_switches, label_loops, resolve, TypeChecker, validate_labels};
+use semantic_analysis::{analyze_switches, label_loops, resolve, validate_labels, TypeChecker};
 
 #[derive(ClapParser, Debug)]
 #[command(version, about, long_about = "Runs the Hecate C compiler")]

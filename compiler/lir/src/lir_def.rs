@@ -8,7 +8,7 @@ pub struct Program {
 #[derive(Debug, Clone)]
 pub enum Decl {
     Func(Func),
-    StaticVar(StaticVar)
+    StaticVar(StaticVar),
 }
 
 #[derive(Debug, Clone)]

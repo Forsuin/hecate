@@ -7,7 +7,6 @@ use ty::*;
 type IOResult = std::io::Result<()>;
 
 pub fn output(path: &str, assm: Program, symbols: &SymbolTable) -> IOResult {
-
     let output = File::create(path)?;
     let mut writer = BufWriter::new(output);
 
@@ -23,12 +22,8 @@ pub fn output(path: &str, assm: Program, symbols: &SymbolTable) -> IOResult {
 
 fn emit_decl<W: Write>(writer: &mut W, decl: &Decl, symbols: &SymbolTable) -> IOResult {
     match decl {
-        Decl::Func(func) => {
-            emit_func(writer, func, symbols)
-        }
-        Decl::StaticVar(var) => {
-            emit_var(writer, var)
-        }
+        Decl::Func(func) => emit_func(writer, func, symbols),
+        Decl::StaticVar(var) => emit_var(writer, var),
     }
 }
 
@@ -36,7 +31,9 @@ fn emit_var<W: Write>(writer: &mut W, var: &StaticVar) -> IOResult {
     writeln!(writer, "# <static var: {}>", var.name)?;
     let init;
 
-    if var.global { writeln!(writer, "\t.globl {}", var.name)?; }
+    if var.global {
+        writeln!(writer, "\t.globl {}", var.name)?;
+    }
 
     // which section variable goes
 
@@ -59,7 +56,9 @@ fn emit_var<W: Write>(writer: &mut W, var: &StaticVar) -> IOResult {
 
 fn emit_func<W: Write>(writer: &mut W, func: &Func, symbols: &SymbolTable) -> IOResult {
     writeln!(writer, "# <function: {}>", func.name)?;
-    if func.global { writeln!(writer, "\t.globl {}", func.name)?; }
+    if func.global {
+        writeln!(writer, "\t.globl {}", func.name)?;
+    }
     writeln!(writer, "\t.text")?;
     writeln!(writer, "{}:", func.name)?;
     writeln!(writer, "\tpushq %rbp")?;
@@ -72,16 +71,18 @@ fn emit_func<W: Write>(writer: &mut W, func: &Func, symbols: &SymbolTable) -> IO
     Ok(())
 }
 
-fn emit_instruction<W: Write>(writer: &mut W, instruction: &Instruction, symbols: &SymbolTable) -> IOResult {
+fn emit_instruction<W: Write>(
+    writer: &mut W,
+    instruction: &Instruction,
+    symbols: &SymbolTable,
+) -> IOResult {
     match instruction {
-        Instruction::Mov { src, dest } => {
-            writeln!(
-                writer,
-                "\tmovl {}, {}",
-                show_operand(src),
-                show_operand(dest)
-            )?
-        }
+        Instruction::Mov { src, dest } => writeln!(
+            writer,
+            "\tmovl {}, {}",
+            show_operand(src),
+            show_operand(dest)
+        )?,
         Instruction::Ret => {
             writeln!(writer, "\n# <return>")?;
             writeln!(writer, "\tmovq %rbp, %rsp")?;
@@ -95,7 +96,11 @@ fn emit_instruction<W: Write>(writer: &mut W, instruction: &Instruction, symbols
             // writeln!(writer, "# <Allocate {}>", amt)?;
             writeln!(writer, "\tsubq ${}, %rsp", amt)?;
         }
-        Instruction::Binary { op: op @ BinaryOp::Sal | op @ BinaryOp::Sar, src, dest } => {
+        Instruction::Binary {
+            op: op @ BinaryOp::Sal | op @ BinaryOp::Sar,
+            src,
+            dest,
+        } => {
             writeln!(writer, "# <{:?} {:?} {:?}>", src, op, dest)?;
             writeln!(
                 writer,
@@ -166,8 +171,7 @@ fn emit_instruction<W: Write>(writer: &mut W, instruction: &Instruction, symbols
 fn show_fun_name(name: &String, symbols: &SymbolTable) -> String {
     if symbols.get(name).is_some() {
         name.clone()
-    }
-    else {
+    } else {
         format!("{}@PLT", name)
     }
 }
@@ -175,7 +179,7 @@ fn show_fun_name(name: &String, symbols: &SymbolTable) -> String {
 fn show_quad_op(op: &Operand) -> String {
     match op {
         Operand::Register(r) => show_quad_reg(r),
-        _ => show_operand(op)
+        _ => show_operand(op),
     }
 }
 
@@ -201,15 +205,15 @@ fn show_binary(op: &BinaryOp) -> String {
 
 fn show_byte_reg(reg: &Register) -> String {
     match reg {
-            Register::AX => "%al".to_string(),
-            Register::CX => "%cl".to_string(),
-            Register::DX => "%dl".to_string(),
-            Register::DI => "%dil".to_string(),
-            Register::SI => "%sil".to_string(),
-            Register::R8 => "%r8b".to_string(),
-            Register::R9 => "%r9b".to_string(),
-            Register::R10 => "%r10b".to_string(),
-            Register::R11 => "%r11b".to_string(),
+        Register::AX => "%al".to_string(),
+        Register::CX => "%cl".to_string(),
+        Register::DX => "%dl".to_string(),
+        Register::DI => "%dil".to_string(),
+        Register::SI => "%sil".to_string(),
+        Register::R8 => "%r8b".to_string(),
+        Register::R9 => "%r9b".to_string(),
+        Register::R10 => "%r10b".to_string(),
+        Register::R11 => "%r11b".to_string(),
     }
 }
 
@@ -231,17 +235,20 @@ fn show_reg(reg: &Register) -> String {
 }
 
 fn show_quad_reg(reg: &Register) -> String {
-    format!("%{}", match reg {
-        Register::AX => "rax",
-        Register::CX => "rcx",
-        Register::DX => "rdx",
-        Register::DI => "rdi",
-        Register::SI => "rsi",
-        Register::R8 => "r8",
-        Register::R9 => "r9",
-        Register::R10 => "r10",
-        Register::R11 => "r11",
-    })
+    format!(
+        "%{}",
+        match reg {
+            Register::AX => "rax",
+            Register::CX => "rcx",
+            Register::DX => "rdx",
+            Register::DI => "rdi",
+            Register::SI => "rsi",
+            Register::R8 => "r8",
+            Register::R9 => "r9",
+            Register::R10 => "r10",
+            Register::R11 => "r11",
+        }
+    )
 }
 
 fn show_byte_operand(op: &Operand) -> String {

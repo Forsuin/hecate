@@ -13,16 +13,13 @@ pub fn fix_invalid_instructions(program: &mut Program, symbols: &mut SymbolTable
 
 fn fix_decl(decl: &Decl, symbols: &mut SymbolTable) -> Decl {
     match decl {
-        Decl::Func(func) => {
-            Decl::Func(fix_func(func, symbols))
-        }
-        Decl::StaticVar(_) => { decl.clone() }
+        Decl::Func(func) => Decl::Func(fix_func(func, symbols)),
+        Decl::StaticVar(_) => decl.clone(),
     }
 }
 
 fn fix_func(func: &Func, symbols: &mut SymbolTable) -> Func {
     let stack_bytes = symbols.get_bytes_required(&func.name).unwrap();
-
 
     let round_away_from_zero = |n: i32, x: i32| {
         if x % n == 0 {
@@ -54,8 +51,8 @@ fn fix_instructions(instructions: &Vec<Instruction>) -> Vec<Instruction> {
     for i in instructions {
         match i {
             Instruction::Mov {
-                src: src@ Operand::Stack(_) | src @ Operand::Data(_),
-                dest: dest @ Operand::Stack(_) | dest@ Operand::Data(_),
+                src: src @ Operand::Stack(_) | src @ Operand::Data(_),
+                dest: dest @ Operand::Stack(_) | dest @ Operand::Data(_),
             } => {
                 fixed_instr.push(Instruction::Mov {
                     src: src.clone(),
@@ -112,7 +109,10 @@ fn fix_instructions(instructions: &Vec<Instruction>) -> Vec<Instruction> {
                 });
                 fixed_instr.push(Instruction::Idiv(Operand::Register(Register::R10)));
             }
-            Instruction::Cmp(first @ Operand::Stack(_) | first @ Operand::Data(_), second @ Operand::Stack(_) | second @ Operand::Data(_)) => {
+            Instruction::Cmp(
+                first @ Operand::Stack(_) | first @ Operand::Data(_),
+                second @ Operand::Stack(_) | second @ Operand::Data(_),
+            ) => {
                 fixed_instr.push(Instruction::Mov {
                     src: first.clone(),
                     dest: Operand::Register(Register::R10),

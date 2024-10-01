@@ -1,7 +1,5 @@
-
-pub use types::*;
 pub use scope::*;
+pub use types::*;
 
-pub mod types;
 pub mod scope;
-
+pub mod types;

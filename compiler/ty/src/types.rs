@@ -18,8 +18,15 @@ pub enum InitialVal {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum IdentifierAttr {
-    Func { defined: bool, global: bool, stack_frame_size: i32 },
-    Static { init: InitialVal, global: bool },
+    Func {
+        defined: bool,
+        global: bool,
+        stack_frame_size: i32,
+    },
+    Static {
+        init: InitialVal,
+        global: bool,
+    },
     Local,
 }
 

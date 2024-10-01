@@ -10,9 +10,7 @@ type CaseMap = HashMap<Option<i32>, String>;
 pub fn analyze_switches(program: &mut TranslationUnit) -> SemanticResult<()> {
     for decl in &mut program.decls {
         match decl {
-            Decl::FuncDecl(func) => {
-                analyze_func(func)?
-            }
+            Decl::FuncDecl(func) => analyze_func(func)?,
             Decl::VarDecl(_) => {}
         }
     }
@@ -124,7 +122,7 @@ fn analyze_case(
     case_map: &mut Option<CaseMap>,
     label: &str,
     body: &mut Stmt,
-    case_label: &mut String
+    case_label: &mut String,
 ) -> SemanticResult<()> {
     // Check if in switch
     case_map

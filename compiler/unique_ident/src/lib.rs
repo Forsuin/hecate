@@ -20,4 +20,3 @@ pub fn make_label(prefix: &str) -> String {
 pub fn make_temp_name(prefix: &str) -> String {
     make_label(prefix)
 }
-

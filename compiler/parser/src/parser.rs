@@ -3,8 +3,8 @@ use std::iter::Peekable;
 
 use thiserror::Error;
 
-use ast::*;
 use ast::Expr::{Assignment, CompoundAssignment, Conditional};
+use ast::*;
 use lexer::*;
 
 #[derive(Error, Clone, Debug)]

@@ -88,26 +88,34 @@ fn resolve_local_var(
         Some(prev_entry) => {
             if prev_entry.from_current_scope {
                 if !(prev_entry.has_linkage && *storage_class == Some(StorageClass::Extern)) {
-                    return Err(SemErr::new(format!("Conflicting local declarations for variable: '{}'", var)));
+                    return Err(SemErr::new(format!(
+                        "Conflicting local declarations for variable: '{}'",
+                        var
+                    )));
                 }
             }
         }
     }
 
     if *storage_class == Some(StorageClass::Extern) {
-        ident_map.insert(var.clone(), IdentEntry {
-            unique_name: var.clone(),
-            from_current_scope: true,
-            has_linkage: true,
-        });
-    }
-    else {
+        ident_map.insert(
+            var.clone(),
+            IdentEntry {
+                unique_name: var.clone(),
+                from_current_scope: true,
+                has_linkage: true,
+            },
+        );
+    } else {
         let unique_name = make_temp_name(var);
-        ident_map.insert(var.clone(), IdentEntry {
-            unique_name: unique_name.clone(),
-            from_current_scope: true,
-            has_linkage: false,
-        });
+        ident_map.insert(
+            var.clone(),
+            IdentEntry {
+                unique_name: unique_name.clone(),
+                from_current_scope: true,
+                has_linkage: false,
+            },
+        );
 
         *var = unique_name;
     }

@@ -23,7 +23,11 @@ fn label_func(func: &mut FuncDecl) -> Result<(), SemErr> {
     Ok(())
 }
 
-fn label_block(block: &mut Block, cur_label: Option<String>, cur_continue_label: Option<String>) -> Result<(), SemErr> {
+fn label_block(
+    block: &mut Block,
+    cur_label: Option<String>,
+    cur_continue_label: Option<String>,
+) -> Result<(), SemErr> {
     for item in &mut block.items {
         label_item(item, cur_label.clone(), cur_continue_label.clone())?;
     }
@@ -31,7 +35,11 @@ fn label_block(block: &mut Block, cur_label: Option<String>, cur_continue_label:
     Ok(())
 }
 
-fn label_item(item: &mut BlockItem, cur_label: Option<String>, cur_continue_label: Option<String>) -> Result<(), SemErr> {
+fn label_item(
+    item: &mut BlockItem,
+    cur_label: Option<String>,
+    cur_continue_label: Option<String>,
+) -> Result<(), SemErr> {
     match item {
         BlockItem::S(ref mut stmt) => label_stmt(stmt, cur_label, cur_continue_label)?,
         BlockItem::D(_) => {}
@@ -40,7 +48,11 @@ fn label_item(item: &mut BlockItem, cur_label: Option<String>, cur_continue_labe
     Ok(())
 }
 
-fn label_stmt(stmt: &mut Stmt, cur_break_label: Option<String>, cur_continue_label: Option<String>) -> Result<(), SemErr> {
+fn label_stmt(
+    stmt: &mut Stmt,
+    cur_break_label: Option<String>,
+    cur_continue_label: Option<String>,
+) -> Result<(), SemErr> {
     match stmt {
         Stmt::Break { label } => match cur_break_label {
             None => Err(SemErr::new(format!("Break outside of a loop"))),
@@ -105,12 +117,20 @@ fn label_stmt(stmt: &mut Stmt, cur_break_label: Option<String>, cur_continue_lab
             Ok(())
         }
 
-        Stmt::Switch { control: _, body, label } => {
+        Stmt::Switch {
+            control: _,
+            body,
+            label,
+        } => {
             *label = make_label("switch");
             label_stmt(body, Some(label.clone()), cur_continue_label)?;
             Ok(())
         }
-        Stmt::Case { constant: _, body, label: _ } => {
+        Stmt::Case {
+            constant: _,
+            body,
+            label: _,
+        } => {
             label_stmt(body, cur_break_label, cur_continue_label)?;
             Ok(())
         }

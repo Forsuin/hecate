@@ -22,12 +22,8 @@ pub fn replace_psuedos(assm_ast: &Program, symbol_table: &mut SymbolTable) -> Pr
 
 fn replace_decl(decl: &Decl, symbol_table: &mut SymbolTable) -> Decl {
     match decl {
-        Decl::Func(func) => {
-            Decl::Func(replace_func(func, symbol_table))
-        }
-        Decl::StaticVar(_) => {
-            decl.clone()
-        }
+        Decl::Func(func) => Decl::Func(replace_func(func, symbol_table)),
+        Decl::StaticVar(_) => decl.clone(),
     }
 }
 
@@ -42,16 +38,22 @@ fn replace_func(func: &Func, symbol_table: &mut SymbolTable) -> Func {
         .map(|instr| replace_instruction(instr, &mut state, symbol_table))
         .collect();
 
-    symbol_table.set_bytes_required(&func.name, state.current_offset).unwrap();
+    symbol_table
+        .set_bytes_required(&func.name, state.current_offset)
+        .unwrap();
 
     Func {
         name: func.name.clone(),
         instructions: fixed_instructions,
-        global: func.global
+        global: func.global,
     }
 }
 
-fn replace_instruction(instruction: &Instruction, state: &mut ReplacementState, symbol_table: &mut SymbolTable) -> Instruction {
+fn replace_instruction(
+    instruction: &Instruction,
+    state: &mut ReplacementState,
+    symbol_table: &mut SymbolTable,
+) -> Instruction {
     match instruction {
         Instruction::Mov { src, dest } => {
             let src = replace_operand(src, state, symbol_table);
@@ -107,13 +109,16 @@ fn replace_instruction(instruction: &Instruction, state: &mut ReplacementState, 
     }
 }
 
-fn replace_operand(operand: &Operand, state: &mut ReplacementState, symbols: &mut SymbolTable) -> Operand {
+fn replace_operand(
+    operand: &Operand,
+    state: &mut ReplacementState,
+    symbols: &mut SymbolTable,
+) -> Operand {
     match operand {
         Operand::Pseudo(var) => {
             if symbols.is_static(var).unwrap() {
                 Operand::Data(var.clone())
-            }
-            else {
+            } else {
                 match state.offset_map.get(var) {
                     None => {
                         let new_offset = state.current_offset - 4;

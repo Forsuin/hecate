@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use crate::{IdentifierAttr, InitialVal, Symbol, Type};
+use std::collections::HashMap;
 
 pub struct SymbolTable {
     pub symbols: HashMap<String, Symbol>,
@@ -66,7 +66,9 @@ impl SymbolTable {
         match self.get(name) {
             None => Ok(false),
             Some(symbol) => match symbol.attrs {
-                IdentifierAttr::Func { .. } => Err("Internal Error: functions don't have static storage".to_string()),
+                IdentifierAttr::Func { .. } => {
+                    Err("Internal Error: functions don't have static storage".to_string())
+                }
                 IdentifierAttr::Static { .. } => Ok(true),
                 IdentifierAttr::Local => Ok(false),
             },
@@ -80,26 +82,33 @@ impl SymbolTable {
     pub fn set_bytes_required(&mut self, name: &str, bytes_required: i32) -> Result<(), String> {
         if let Some(symbol) = self.symbols.get_mut(name) {
             return match symbol.attrs {
-                IdentifierAttr::Func { ref mut stack_frame_size, .. } => {
+                IdentifierAttr::Func {
+                    ref mut stack_frame_size,
+                    ..
+                } => {
                     *stack_frame_size = bytes_required;
                     Ok(())
                 }
-                _ => { Err(format!("Internal Error: {} is not a function, cannot set stack frame size", name)) }
-            }
+                _ => Err(format!(
+                    "Internal Error: {} is not a function, cannot set stack frame size",
+                    name
+                )),
+            };
         }
 
-        Err(format!("Internal Error: {} is not a symbol, cannot set stack frame size", name))
+        Err(format!(
+            "Internal Error: {} is not a symbol, cannot set stack frame size",
+            name
+        ))
     }
 
     pub fn get_bytes_required(&self, name: &str) -> Result<i32, String> {
         if let Some(symbol) = self.symbols.get(name) {
             match symbol.attrs {
-                IdentifierAttr::Func { stack_frame_size, .. } => {
-                    return Ok(stack_frame_size)
-                },
-                _ => {
-                    return Err(format!("Internal Error: '{}' is not a function", name))
-                }
+                IdentifierAttr::Func {
+                    stack_frame_size, ..
+                } => return Ok(stack_frame_size),
+                _ => return Err(format!("Internal Error: '{}' is not a function", name)),
             }
         }
 
