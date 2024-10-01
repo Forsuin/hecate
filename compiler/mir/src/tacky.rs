@@ -1,6 +1,19 @@
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct TranslationUnit {
-    pub funcs: Vec<Func>,
+    pub decls: Vec<Decl>,
+}
+
+#[derive(Debug, Eq, PartialEq, Clone)]
+pub enum Decl {
+    Func(Func),
+    StaticVar(StaticVar),
+}
+
+#[derive(Debug, Eq, PartialEq, Clone)]
+pub struct StaticVar {
+    pub name: String,
+    pub global: bool,
+    pub init: i32,
 }
 
 #[derive(Debug, Eq, PartialEq, Clone)]
@@ -8,6 +21,7 @@ pub struct Func {
     pub name: String,
     pub params: Vec<String>,
     pub instructions: Vec<Instruction>,
+    pub global: bool,
 }
 
 #[derive(Debug, Eq, PartialEq, Clone)]

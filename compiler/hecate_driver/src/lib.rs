@@ -7,7 +7,6 @@ use thiserror::Error;
 
 use codegen::gen_assm;
 use emission::output;
-// use emission::output;
 use lexer::{Lexer, TokenType};
 use mir::{debug_tacky, gen_tacky};
 use parser::Parser;
@@ -226,6 +225,8 @@ fn compile(path: &str, stop_stage: &Option<StopStage>, assm_path: &str, debug: b
 
     analyze_switches(&mut ast)?;
 
+    // println!("PRE-TYPE_CHECKER AST:\n{:#?}", ast);
+
     let mut type_checker = TypeChecker::new();
 
     type_checker.check(&ast)?;
@@ -236,7 +237,7 @@ fn compile(path: &str, stop_stage: &Option<StopStage>, assm_path: &str, debug: b
         return Ok(());
     }
 
-    let tacky = gen_tacky(&ast);
+    let tacky = gen_tacky(&ast, &type_checker.symbols);
 
     if debug {
         // println!("Assm Path: {}", assm_path);

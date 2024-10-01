@@ -3,11 +3,20 @@ use ty::SymbolTable;
 
 pub fn fix_invalid_instructions(program: &mut Program, symbols: &mut SymbolTable) -> Program {
     Program {
-        funcs: program
-            .funcs
+        decls: program
+            .decls
             .iter()
-            .map(|func| fix_func(func, symbols))
+            .map(|decl| fix_decl(decl, symbols))
             .collect(),
+    }
+}
+
+fn fix_decl(decl: &Decl, symbols: &mut SymbolTable) -> Decl {
+    match decl {
+        Decl::Func(func) => {
+            Decl::Func(fix_func(func, symbols))
+        }
+        Decl::StaticVar(_) => { decl.clone() }
     }
 }
 
@@ -35,6 +44,7 @@ fn fix_func(func: &Func, symbols: &mut SymbolTable) -> Func {
     Func {
         name: func.name.clone(),
         instructions,
+        global: func.global,
     }
 }
 
@@ -44,16 +54,16 @@ fn fix_instructions(instructions: &Vec<Instruction>) -> Vec<Instruction> {
     for i in instructions {
         match i {
             Instruction::Mov {
-                src: Operand::Stack(src),
-                dest: Operand::Stack(dest),
+                src: src@ Operand::Stack(_) | src @ Operand::Data(_),
+                dest: dest @ Operand::Stack(_) | dest@ Operand::Data(_),
             } => {
                 fixed_instr.push(Instruction::Mov {
-                    src: Operand::Stack(*src),
+                    src: src.clone(),
                     dest: Operand::Register(Register::R10),
                 });
                 fixed_instr.push(Instruction::Mov {
                     src: Operand::Register(Register::R10),
-                    dest: Operand::Stack(*dest),
+                    dest: dest.clone(),
                 });
             }
             Instruction::Binary {
@@ -63,26 +73,26 @@ fn fix_instructions(instructions: &Vec<Instruction>) -> Vec<Instruction> {
                     | op @ BinaryOp::And
                     | op @ BinaryOp::Or
                     | op @ BinaryOp::Xor,
-                src: Operand::Stack(src),
-                dest: Operand::Stack(dest),
+                src: src @ Operand::Stack(_) | src @ Operand::Data(_),
+                dest: dest @ Operand::Stack(_) | dest @ Operand::Data(_),
             } => {
                 fixed_instr.push(Instruction::Mov {
-                    src: Operand::Stack(*src),
+                    src: src.clone(),
                     dest: Operand::Register(Register::R10),
                 });
                 fixed_instr.push(Instruction::Binary {
                     op: op.clone(),
                     src: Operand::Register(Register::R10),
-                    dest: Operand::Stack(*dest),
+                    dest: dest.clone(),
                 });
             }
             Instruction::Binary {
                 op: BinaryOp::Mult,
                 src,
-                dest: Operand::Stack(dest),
+                dest: dest @ Operand::Stack(_) | dest @ Operand::Data(_),
             } => {
                 fixed_instr.push(Instruction::Mov {
-                    src: Operand::Stack(*dest),
+                    src: dest.clone(),
                     dest: Operand::Register(Register::R11),
                 });
                 fixed_instr.push(Instruction::Binary {
@@ -92,7 +102,7 @@ fn fix_instructions(instructions: &Vec<Instruction>) -> Vec<Instruction> {
                 });
                 fixed_instr.push(Instruction::Mov {
                     src: Operand::Register(Register::R11),
-                    dest: Operand::Stack(*dest),
+                    dest: dest.clone(),
                 });
             }
             Instruction::Idiv(Operand::Imm(val)) => {
@@ -102,14 +112,14 @@ fn fix_instructions(instructions: &Vec<Instruction>) -> Vec<Instruction> {
                 });
                 fixed_instr.push(Instruction::Idiv(Operand::Register(Register::R10)));
             }
-            Instruction::Cmp(Operand::Stack(first), Operand::Stack(second)) => {
+            Instruction::Cmp(first @ Operand::Stack(_) | first @ Operand::Data(_), second @ Operand::Stack(_) | second @ Operand::Data(_)) => {
                 fixed_instr.push(Instruction::Mov {
-                    src: Operand::Stack(*first),
+                    src: first.clone(),
                     dest: Operand::Register(Register::R10),
                 });
                 fixed_instr.push(Instruction::Cmp(
                     Operand::Register(Register::R10),
-                    Operand::Stack(*second),
+                    second.clone(),
                 ));
             }
             Instruction::Cmp(first, Operand::Imm(val)) => {

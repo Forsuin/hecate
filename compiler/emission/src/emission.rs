@@ -4,13 +4,15 @@ use std::io::{BufWriter, Write};
 use lir::*;
 use ty::*;
 
-pub fn output(path: &str, assm: Program, symbols: &Scope<Symbol>) -> std::io::Result<()> {
+type IOResult = std::io::Result<()>;
+
+pub fn output(path: &str, assm: Program, symbols: &SymbolTable) -> IOResult {
 
     let output = File::create(path)?;
     let mut writer = BufWriter::new(output);
 
-    for func in &assm.funcs {
-        emit_func(&mut writer, func, symbols)?;
+    for decl in &assm.decls {
+        emit_decl(&mut writer, decl, symbols)?;
     }
     emit_stack_note(&mut writer)?;
 
@@ -19,9 +21,46 @@ pub fn output(path: &str, assm: Program, symbols: &Scope<Symbol>) -> std::io::Re
     Ok(())
 }
 
-fn emit_func<W: Write>(writer: &mut W, func: &Func, symbols: &Scope<Symbol>) -> std::io::Result<()> {
+fn emit_decl<W: Write>(writer: &mut W, decl: &Decl, symbols: &SymbolTable) -> IOResult {
+    match decl {
+        Decl::Func(func) => {
+            emit_func(writer, func, symbols)
+        }
+        Decl::StaticVar(var) => {
+            emit_var(writer, var)
+        }
+    }
+}
+
+fn emit_var<W: Write>(writer: &mut W, var: &StaticVar) -> IOResult {
+    writeln!(writer, "# <static var: {}>", var.name)?;
+    let init;
+
+    if var.global { writeln!(writer, "\t.globl {}", var.name)?; }
+
+    // which section variable goes
+
+    if var.init == 0 {
+        writeln!(writer, "\t.bss")?;
+        init = format!("\t.zero 4");
+    } else {
+        writeln!(writer, "\t.data")?;
+        init = format!("\t.long {}", var.init);
+    }
+
+    // alignment
+    writeln!(writer, "\t.balign 4")?;
+
+    writeln!(writer, "{}:", var.name)?;
+    writeln!(writer, "{}", init)?;
+
+    Ok(())
+}
+
+fn emit_func<W: Write>(writer: &mut W, func: &Func, symbols: &SymbolTable) -> IOResult {
     writeln!(writer, "# <function: {}>", func.name)?;
-    writeln!(writer, "\t.globl {}", func.name)?;
+    if func.global { writeln!(writer, "\t.globl {}", func.name)?; }
+    writeln!(writer, "\t.text")?;
     writeln!(writer, "{}:", func.name)?;
     writeln!(writer, "\tpushq %rbp")?;
     writeln!(writer, "\tmovq %rsp, %rbp")?;
@@ -33,7 +72,7 @@ fn emit_func<W: Write>(writer: &mut W, func: &Func, symbols: &Scope<Symbol>) -> 
     Ok(())
 }
 
-fn emit_instruction<W: Write>(writer: &mut W, instruction: &Instruction, symbols: &Scope<Symbol>) -> std::io::Result<()> {
+fn emit_instruction<W: Write>(writer: &mut W, instruction: &Instruction, symbols: &SymbolTable) -> IOResult {
     match instruction {
         Instruction::Mov { src, dest } => {
             writeln!(
@@ -124,7 +163,7 @@ fn emit_instruction<W: Write>(writer: &mut W, instruction: &Instruction, symbols
     Ok(())
 }
 
-fn show_fun_name(name: &String, symbols: &Scope<Symbol>) -> String {
+fn show_fun_name(name: &String, symbols: &SymbolTable) -> String {
     if symbols.get(name).is_some() {
         name.clone()
     }
@@ -217,6 +256,7 @@ fn show_operand(op: &Operand) -> String {
         Operand::Register(reg) => show_reg(reg),
         Operand::Stack(amt) => format!("{}(%rbp)", amt),
         Operand::Imm(val) => format!("${}", val),
+        Operand::Data(var) => format!("{}(%rip)", var),
         Operand::Pseudo(_) => {
             panic!("No Pseudo-registers should be in tree when outputing assembly")
         }
@@ -234,7 +274,7 @@ fn show_condition(cond: &Condition) -> String {
     }
 }
 
-fn emit_stack_note<W: Write>(writer: &mut W) -> std::io::Result<()> {
+fn emit_stack_note<W: Write>(writer: &mut W) -> IOResult {
     writeln!(writer, ".section .note.GNU-stack,\"\",@progbits")?;
     Ok(())
 }

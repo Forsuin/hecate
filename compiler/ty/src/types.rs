@@ -1,10 +1,10 @@
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Copy)]
 pub enum Type {
     Int,
     Func(FuncType),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Copy)]
 pub struct FuncType {
     pub param_count: usize,
 }
@@ -16,14 +16,14 @@ pub enum InitialVal {
     NoInit,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum IdentifierAttr {
     Func { defined: bool, global: bool, stack_frame_size: i32 },
     Static { init: InitialVal, global: bool },
     Local,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Symbol {
     pub t: Type,
     pub attrs: IdentifierAttr,

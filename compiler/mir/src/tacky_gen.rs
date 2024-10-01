@@ -1,25 +1,56 @@
 use ast::{BinaryOp, BlockItem, Decl, Expr, ForInit, Stmt, UnaryOp};
+use ty::{IdentifierAttr, InitialVal, SymbolTable};
 use unique_ident::*;
 
 use crate::tacky;
-use crate::tacky::{Instruction, Val};
 use crate::tacky::Instruction::{Jump, JumpIfNotZero};
+use crate::tacky::*;
 
-pub fn gen_tacky(ast: &ast::TranslationUnit) -> tacky::TranslationUnit {
-    let mut funcs = vec![];
+pub fn gen_tacky(ast: &ast::TranslationUnit, symbols: &SymbolTable) -> tacky::TranslationUnit {
+    let mut decls: Vec<tacky::Decl> = vec![];
 
-    for func in &ast.funcs {
-        if let Some(_) = func.body {
-            funcs.push(tacky_func(func));
+    for decl in &ast.decls {
+        match decl {
+            Decl::FuncDecl(decl) => {
+                if decl.body.is_some() {
+                    decls.push(tacky::Decl::Func(tacky_func(decl, symbols)));
+                }
+            }
+            Decl::VarDecl(_) => {}
         }
     }
 
-    tacky::TranslationUnit {
-        funcs
-    }
+    decls.append(&mut tacky_symbol_table(symbols));
+
+    tacky::TranslationUnit { decls }
 }
 
-fn tacky_func(func: &ast::FuncDecl) -> tacky::Func {
+fn tacky_symbol_table(symbols: &SymbolTable) -> Vec<tacky::Decl> {
+    let mut vars = vec![];
+
+    for (name, entry) in &symbols.symbols {
+        match entry.attrs {
+            IdentifierAttr::Static { init, global } => match init {
+                InitialVal::Tentative => vars.push(tacky::Decl::StaticVar(StaticVar {
+                    name: name.clone(),
+                    global,
+                    init: 0,
+                })),
+                InitialVal::Initial(i) => vars.push(tacky::Decl::StaticVar(StaticVar {
+                    name: name.clone(),
+                    global,
+                    init: i,
+                })),
+                InitialVal::NoInit => {}
+            },
+            _ => {}
+        }
+    }
+
+    vars
+}
+
+fn tacky_func(func: &ast::FuncDecl, symbols: &SymbolTable) -> tacky::Func {
     let mut instructions = vec![];
 
     if let Some(body) = &func.body {
@@ -32,6 +63,7 @@ fn tacky_func(func: &ast::FuncDecl) -> tacky::Func {
         name: func.ident.clone(),
         params: func.params.clone(),
         instructions,
+        global: symbols.is_global(&func.ident),
     }
 }
 
@@ -56,8 +88,16 @@ fn tacky_block(block: &ast::Block) -> Vec<Instruction> {
 
 fn tacky_decl(decl: &ast::Decl) -> Vec<Instruction> {
     match decl {
-        Decl::FuncDecl { .. } => { vec![] }
-        Decl::VarDecl { var } => { tacky_var_decl(var) }
+        Decl::FuncDecl(_) => {
+            vec![]
+        }
+        Decl::VarDecl(ast::VarDecl {
+            storage_class: Some(_),
+            ..
+        }) => {
+            vec![]
+        }
+        Decl::VarDecl(var) => tacky_var_decl(var),
     }
 }
 
@@ -91,7 +131,11 @@ fn tacky_stmt(stmt: &ast::Stmt) -> Vec<tacky::Instruction> {
             let (instructions, _) = tacky_expr(expr);
             instructions
         }
-        Stmt::If { condition, then, otherwise } => {
+        Stmt::If {
+            condition,
+            then,
+            otherwise,
+        } => {
             let else_label = make_label("else_branch");
             let end_label = make_label("end_if");
 
@@ -99,17 +143,22 @@ fn tacky_stmt(stmt: &ast::Stmt) -> Vec<tacky::Instruction> {
 
             instructions.push(Instruction::JumpIfZero {
                 condition: c,
-                target: if otherwise.is_some() { else_label.clone() } else { end_label.clone() },
+                target: if otherwise.is_some() {
+                    else_label.clone()
+                } else {
+                    end_label.clone()
+                },
             });
 
             instructions.append(&mut tacky_stmt(then));
 
             if let Some(otherwise) = otherwise {
-                instructions.push(Jump { target: end_label.clone() });
+                instructions.push(Jump {
+                    target: end_label.clone(),
+                });
                 instructions.push(Instruction::Label(else_label.clone()));
                 instructions.append(&mut tacky_stmt(otherwise));
-            }
-            else {
+            } else {
                 // Do nothing
             }
 
@@ -122,7 +171,9 @@ fn tacky_stmt(stmt: &ast::Stmt) -> Vec<tacky::Instruction> {
         }
 
         Stmt::Goto { label } => {
-            vec![Instruction::Jump { target: label.clone() }]
+            vec![Instruction::Jump {
+                target: label.clone(),
+            }]
         }
         Stmt::LabeledStmt { label, stmt } => {
             let mut instructions = vec![Instruction::Label(label.clone())];
@@ -132,15 +183,13 @@ fn tacky_stmt(stmt: &ast::Stmt) -> Vec<tacky::Instruction> {
             instructions
         }
 
-        Stmt::Compound { block } => {
-            tacky_block(block)
-        }
+        Stmt::Compound { block } => tacky_block(block),
 
         Stmt::Break { label } => {
             let mut instructions = vec![];
 
             instructions.push(Instruction::Jump {
-                target: format!("break.{}", label)
+                target: format!("break.{}", label),
             });
 
             instructions
@@ -149,12 +198,16 @@ fn tacky_stmt(stmt: &ast::Stmt) -> Vec<tacky::Instruction> {
             let mut instructions = vec![];
 
             instructions.push(Instruction::Jump {
-                target: format!("continue.{}", label)
+                target: format!("continue.{}", label),
             });
 
             instructions
         }
-        Stmt::While { condition, body, label } => {
+        Stmt::While {
+            condition,
+            body,
+            label,
+        } => {
             let mut instuctions = vec![];
 
             let continue_label = format!("continue.{}", label);
@@ -166,21 +219,24 @@ fn tacky_stmt(stmt: &ast::Stmt) -> Vec<tacky::Instruction> {
             instuctions.append(&mut cond_instr);
             instuctions.push(Instruction::JumpIfZero {
                 condition: cond,
-                target: break_label.clone()
+                target: break_label.clone(),
             });
 
             instuctions.append(&mut tacky_stmt(body));
 
             instuctions.push(Instruction::Jump {
-                target: continue_label.clone()
+                target: continue_label.clone(),
             });
 
             instuctions.push(Instruction::Label(break_label));
 
             instuctions
-
         }
-        Stmt::DoWhile { body, condition, label } => {
+        Stmt::DoWhile {
+            body,
+            condition,
+            label,
+        } => {
             let mut instructions = vec![];
             let start_label = make_label("do_start_loop");
             let continue_label = format!("continue.{}", label);
@@ -201,7 +257,13 @@ fn tacky_stmt(stmt: &ast::Stmt) -> Vec<tacky::Instruction> {
 
             instructions
         }
-        Stmt::For { init, condition, post, body, label } => {
+        Stmt::For {
+            init,
+            condition,
+            post,
+            body,
+            label,
+        } => {
             let mut instructions = vec![];
             let start_label = make_label("for_start_loop");
             let continue_label = format!("continue.{}", label);
@@ -211,14 +273,12 @@ fn tacky_stmt(stmt: &ast::Stmt) -> Vec<tacky::Instruction> {
                 ForInit::Decl(decl) => {
                     instructions.append(&mut tacky_var_decl(decl));
                 }
-                ForInit::Expr(expr) => {
-                    match expr {
-                        Some(expr) => {
-                            instructions.append(&mut tacky_expr(expr).0);
-                        }
-                        None => {}
+                ForInit::Expr(expr) => match expr {
+                    Some(expr) => {
+                        instructions.append(&mut tacky_expr(expr).0);
                     }
-                }
+                    None => {}
+                },
             }
 
             instructions.push(Instruction::Label(start_label.clone()));
@@ -251,22 +311,28 @@ fn tacky_stmt(stmt: &ast::Stmt) -> Vec<tacky::Instruction> {
             }
 
             instructions.push(Instruction::Jump {
-                target: start_label.clone()
+                target: start_label.clone(),
             });
 
             instructions.push(Instruction::Label(break_label));
 
             instructions
         }
-        Stmt::Switch { control, body, label } => {
-            tacky_switch(control, body, label.clone())
-        }
-        Stmt::Case { constant: _, body, label } => {
+        Stmt::Switch {
+            control,
+            body,
+            label,
+        } => tacky_switch(control, body, label.clone()),
+        Stmt::Case {
+            constant: _,
+            body,
+            label,
+        } => {
             let mut instructions = vec![];
 
             instructions.push(Instruction::Label(label.clone()));
 
-            instructions.append(& mut tacky_stmt(body));
+            instructions.append(&mut tacky_stmt(body));
 
             instructions
         }
@@ -275,23 +341,24 @@ fn tacky_stmt(stmt: &ast::Stmt) -> Vec<tacky::Instruction> {
 
             instructions.push(Instruction::Label(label.clone()));
 
-            instructions.append(& mut tacky_stmt(body));
+            instructions.append(&mut tacky_stmt(body));
 
             instructions
         }
     }
-
 }
 
 fn tacky_expr(expr: &ast::Expr) -> (Vec<tacky::Instruction>, tacky::Val) {
     match expr {
         ast::Expr::Constant(val) => (vec![], tacky::Val::Constant(*val)),
-        Expr::Unary { op: UnaryOp::Inc, expr } => {
-            tacky_compound_expression(BinaryOp::Add, expr, &Expr::Constant(1))
-        }
-        Expr::Unary { op: UnaryOp::Dec, expr } => {
-            tacky_compound_expression(BinaryOp::Subtract, expr, &Expr::Constant(1))
-        }
+        Expr::Unary {
+            op: UnaryOp::Inc,
+            expr,
+        } => tacky_compound_expression(BinaryOp::Add, expr, &Expr::Constant(1)),
+        Expr::Unary {
+            op: UnaryOp::Dec,
+            expr,
+        } => tacky_compound_expression(BinaryOp::Subtract, expr, &Expr::Constant(1)),
         ast::Expr::Unary { op, expr } => {
             let (instructions, inner) = tacky_expr(expr);
             let dest_name = make_temp();
@@ -426,7 +493,9 @@ fn tacky_expr(expr: &ast::Expr) -> (Vec<tacky::Instruction>, tacky::Val) {
 
             (instructions, tacky::Val::Var(v.clone()))
         }
-        Expr::CompoundAssignment { op, lvalue, expr } => tacky_compound_expression(*op, lvalue, expr),
+        Expr::CompoundAssignment { op, lvalue, expr } => {
+            tacky_compound_expression(*op, lvalue, expr)
+        }
         Expr::PostfixInc(expr) => {
             let expr = match expr.as_ref() {
                 Expr::Var(v) => Val::Var(v.clone()),
@@ -436,13 +505,16 @@ fn tacky_expr(expr: &ast::Expr) -> (Vec<tacky::Instruction>, tacky::Val) {
             let dest = Val::Var(make_temp());
 
             let instructions = vec![
-                Instruction::Copy { src: expr.clone(), dest: dest.clone() },
+                Instruction::Copy {
+                    src: expr.clone(),
+                    dest: dest.clone(),
+                },
                 Instruction::Binary {
                     op: tacky_binop(BinaryOp::Add),
                     first: expr.clone(),
                     second: Val::Constant(1),
                     dest: expr.clone(),
-                }
+                },
             ];
 
             (instructions, dest)
@@ -456,18 +528,25 @@ fn tacky_expr(expr: &ast::Expr) -> (Vec<tacky::Instruction>, tacky::Val) {
             let dest = Val::Var(make_temp());
 
             let instructions = vec![
-                Instruction::Copy { src: expr.clone(), dest: dest.clone() },
+                Instruction::Copy {
+                    src: expr.clone(),
+                    dest: dest.clone(),
+                },
                 Instruction::Binary {
                     op: tacky_binop(BinaryOp::Subtract),
                     first: expr.clone(),
                     second: Val::Constant(1),
                     dest: expr.clone(),
-                }
+                },
             ];
 
             (instructions, dest)
         }
-        Expr::Conditional { condition, then, otherwise } => {
+        Expr::Conditional {
+            condition,
+            then,
+            otherwise,
+        } => {
             let else_label = make_label("else_branch");
             let end_label = make_label("end_if");
             let result_name = make_temp();
@@ -488,7 +567,7 @@ fn tacky_expr(expr: &ast::Expr) -> (Vec<tacky::Instruction>, tacky::Val) {
                 dest: result.clone(),
             });
             instructions.push(Instruction::Jump {
-               target: end_label.clone()
+                target: end_label.clone(),
             });
 
             instructions.push(Instruction::Label(else_label));
@@ -534,7 +613,7 @@ fn tacky_unop(op: &ast::UnaryOp) -> tacky::UnaryOp {
         ast::UnaryOp::Complement => tacky::UnaryOp::Complement,
         ast::UnaryOp::Negate => tacky::UnaryOp::Negate,
         ast::UnaryOp::Not => tacky::UnaryOp::Not,
-        _ => unreachable!("Inc and Dec shouldn't be handled here")
+        _ => unreachable!("Inc and Dec shouldn't be handled here"),
     }
 }
 
@@ -570,7 +649,7 @@ fn tacky_binop(op: BinaryOp) -> tacky::BinaryOp {
 fn tacky_compound_expression(op: BinaryOp, lvalue: &Expr, rhs: &Expr) -> (Vec<Instruction>, Val) {
     let (mut instructions, rhs) = tacky_expr(rhs);
 
-    let dest= match lvalue {
+    let dest = match lvalue {
         Expr::Var(v) => Val::Var(v.clone()),
         _ => unreachable!("Assignment lvalue should always be a Var"),
     };
@@ -594,40 +673,37 @@ fn tacky_switch(control: &Expr, body: &Stmt, label: String) -> Vec<Instruction> 
     let (control_instr, control) = tacky_expr(control);
     let cmp_result = Val::Var(make_temp());
 
-    let gen_tacky_case_jump = |(key, label): &(Option<i32>, String) | {
-        match key {
-            Some(c) => vec![
-                Instruction::Binary {
-                    op: tacky::BinaryOp::Equal,
-                    first: Val::Constant(*c),
-                    second: control.clone(),
-                    dest: cmp_result.clone(),
-                },
-                JumpIfNotZero {
-                    condition: cmp_result.clone(),
-                    target: label.clone(),
-                }
-            ],
-            None => vec![]
-        }
+    let gen_tacky_case_jump = |(key, label): &(Option<i32>, String)| match key {
+        Some(c) => vec![
+            Instruction::Binary {
+                op: tacky::BinaryOp::Equal,
+                first: Val::Constant(*c),
+                second: control.clone(),
+                dest: cmp_result.clone(),
+            },
+            JumpIfNotZero {
+                condition: cmp_result.clone(),
+                target: label.clone(),
+            },
+        ],
+        None => vec![],
     };
 
     let tacky_case_jumps: Vec<Instruction> = cases.iter().flat_map(gen_tacky_case_jump).collect();
 
     let tacky_default_jump = if cases.iter().any(|(key, _)| key.is_none()) {
-        let default_id = cases.iter()
-            .find(|(key, _) | key.is_none())
+        let default_id = cases
+            .iter()
+            .find(|(key, _)| key.is_none())
             .map(|(_, id)| id.clone())
             .expect("Default case label not found");
-        vec![Jump {
-            target: default_id,
-        }]
-    }
-    else {
+        vec![Jump { target: default_id }]
+    } else {
         vec![]
     };
 
-    control_instr.into_iter()
+    control_instr
+        .into_iter()
         .chain(tacky_case_jumps)
         .chain(tacky_default_jump)
         .chain(vec![Jump {
@@ -656,7 +732,11 @@ fn gather_cases_helper(stmt: &Stmt, cases: &mut Vec<(Option<i32>, String)>) {
                 }
             }
         }
-        Stmt::If { condition: _, then, otherwise } => {
+        Stmt::If {
+            condition: _,
+            then,
+            otherwise,
+        } => {
             gather_cases_helper(then, cases);
 
             if let Some(otherwise) = otherwise {
@@ -668,28 +748,51 @@ fn gather_cases_helper(stmt: &Stmt, cases: &mut Vec<(Option<i32>, String)>) {
             gather_cases_helper(stmt, cases);
         }
 
-        Stmt::While { condition: _, body, label: _ } => {
+        Stmt::While {
+            condition: _,
+            body,
+            label: _,
+        } => {
             gather_cases_helper(body, cases);
         }
-        Stmt::DoWhile { body, condition: _, label: _ } => {
+        Stmt::DoWhile {
+            body,
+            condition: _,
+            label: _,
+        } => {
             gather_cases_helper(body, cases);
         }
-        Stmt::For { init: _, condition: _, post: _, body, label: _ } => {
+        Stmt::For {
+            init: _,
+            condition: _,
+            post: _,
+            body,
+            label: _,
+        } => {
             gather_cases_helper(body, cases);
         }
 
-        Stmt::Case { constant, body, label } => {
+        Stmt::Case {
+            constant,
+            body,
+            label,
+        } => {
             if let Expr::Constant(c) = constant {
                 cases.push((Some(*c), label.clone()));
                 gather_cases_helper(body, cases);
-            }
-            else {
+            } else {
                 unreachable!("Tacky Gen, case expr is non-constant value");
             }
         }
         Stmt::Default { body: _, label } => {
             cases.push((None, label.clone()));
         }
-        Stmt::Switch { .. } | Stmt::Continue { .. } | Stmt::Break { .. } | Stmt::Goto { .. } | Stmt::Expression { .. } | Stmt::Return { .. } | Stmt::Null => {}
+        Stmt::Switch { .. }
+        | Stmt::Continue { .. }
+        | Stmt::Break { .. }
+        | Stmt::Goto { .. }
+        | Stmt::Expression { .. }
+        | Stmt::Return { .. }
+        | Stmt::Null => {}
     }
 }

@@ -9,8 +9,8 @@ pub fn debug_tacky(program: &TranslationUnit, file_name: String) -> IOResult {
     let output = File::create(file_name)?;
     let mut writer = BufWriter::new(output);
 
-    for func in &program.funcs {
-        print_func(&mut writer, func)?;
+    for decl in &program.decls {
+        print_decl(&mut writer, decl)?;
     }
 
     writer.flush()?;
@@ -18,10 +18,27 @@ pub fn debug_tacky(program: &TranslationUnit, file_name: String) -> IOResult {
     Ok(())
 }
 
+fn print_decl<W: Write>(writer: &mut W, decl: &Decl) -> IOResult {
+    match decl {
+        Decl::Func(func) => {
+            print_func(writer, func)?;
+        }
+        Decl::StaticVar(var) => {
+            if var.global {
+                writeln!(writer, "\tglobal")?;
+                writeln!(writer, "\t{} = {}", var.name, var.init)?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
 fn print_func<W: Write>(writer: &mut W, func: &Func) -> IOResult {
     writeln!(
         writer,
-        "{}({}):",
+        "{}{}({}):",
+        if func.global { "global " } else { "" },
         func.name,
         func.params.join(", ")
     )?;

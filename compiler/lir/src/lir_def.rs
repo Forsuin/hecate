@@ -2,13 +2,27 @@
 
 #[derive(Debug, Clone)]
 pub struct Program {
-    pub funcs: Vec<Func>,
+    pub decls: Vec<Decl>,
+}
+
+#[derive(Debug, Clone)]
+pub enum Decl {
+    Func(Func),
+    StaticVar(StaticVar)
 }
 
 #[derive(Debug, Clone)]
 pub struct Func {
     pub name: String,
     pub instructions: Vec<Instruction>,
+    pub global: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct StaticVar {
+    pub name: String,
+    pub global: bool,
+    pub init: i32,
 }
 
 #[derive(Debug, Clone)]
@@ -72,6 +86,7 @@ pub enum Operand {
     Register(Register),
     Pseudo(String),
     Stack(i32),
+    Data(String),
 }
 
 #[derive(Debug, Clone)]

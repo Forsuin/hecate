@@ -27,18 +27,18 @@ impl TypeChecker {
     }
 
     fn check_file_scope_var_decl(&mut self, var: &VarDecl) -> SemanticResult<()> {
-        let init = match var.init {
+        let current_init = match var.init {
             Some(Expr::Constant(c)) => InitialVal::Initial(c),
             None => if var.storage_class == Some(StorageClass::Extern) { InitialVal::NoInit } else { InitialVal::Tentative },
             Some(_) => return Err(SemErr::new(format!("File scope variable '{}' has non-constant initializer", var.name)))
         };
 
-        let global = var.storage_class != Some(StorageClass::Static);
+        let current_global = var.storage_class != Some(StorageClass::Static);
 
         let old_decl = self.symbols.get(&var.name);
 
         let (global, init) = match old_decl {
-            None => (global, init),
+            None => (current_global, current_init),
             Some(decl) => {
                 if decl.t != Type::Int {
                     Err(SemErr::new(format!("Function '{}' redeclared as variable", var.name)))?;
@@ -46,15 +46,15 @@ impl TypeChecker {
 
                 match decl.attrs {
                     IdentifierAttr::Static { init: prev_init, global: prev_global } => {
-                        let global = if var.storage_class == Some(StorageClass::Extern) { prev_global } else if global == prev_global { global } else { return Err(SemErr::new(format!("Conflicting variable linkage for: '{}'", var.name))); };
-                        
-                        let init = match (prev_init, init) {
+                        let global = if var.storage_class == Some(StorageClass::Extern) { prev_global } else if current_global == prev_global { current_global } else { return Err(SemErr::new(format!("Conflicting variable linkage for: '{}'", var.name))); };
+
+                        let init = match (prev_init, current_init) {
                             (InitialVal::Initial(_), InitialVal::Initial(_)) => {
                                 return Err(SemErr::new(format!("Conflicting global variable definition: {}", var.name)));
                             },
-                            (InitialVal::Initial(_), _) => init,
+                            (InitialVal::Initial(_), _) => prev_init,
                             (InitialVal::Tentative, InitialVal::Tentative | InitialVal::NoInit) => InitialVal::Tentative,
-                            (_, InitialVal::Initial(_)) | (InitialVal::NoInit, _) => init
+                            (_, InitialVal::Initial(_)) | (InitialVal::NoInit, _) => current_init
                         };
 
                         (global, init)
@@ -74,7 +74,7 @@ impl TypeChecker {
             param_count: decl.params.len(),
         };
         let has_body = decl.body.is_some();
-        let mut defined = false;
+        let defined;
         let mut global = decl.storage_class != Some(StorageClass::Static);
 
         if self.symbols.is_defined(&decl.ident) {

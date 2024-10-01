@@ -181,6 +181,7 @@ name = "mir"
 version = "0.1.0"
 dependencies = [
  "ast",
+ "ty",
  "unique_ident",
 ]
 

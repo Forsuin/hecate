@@ -12,11 +12,22 @@ pub struct ReplacementState {
 
 pub fn replace_psuedos(assm_ast: &Program, symbol_table: &mut SymbolTable) -> Program {
     Program {
-        funcs: assm_ast
-            .funcs
+        decls: assm_ast
+            .decls
             .iter()
-            .map(|func| replace_func(func, symbol_table))
+            .map(|decl| replace_decl(decl, symbol_table))
             .collect(),
+    }
+}
+
+fn replace_decl(decl: &Decl, symbol_table: &mut SymbolTable) -> Decl {
+    match decl {
+        Decl::Func(func) => {
+            Decl::Func(replace_func(func, symbol_table))
+        }
+        Decl::StaticVar(_) => {
+            decl.clone()
+        }
     }
 }
 
@@ -28,7 +39,7 @@ fn replace_func(func: &Func, symbol_table: &mut SymbolTable) -> Func {
     let fixed_instructions = func
         .instructions
         .iter()
-        .map(|instr| replace_instruction(instr, &mut state))
+        .map(|instr| replace_instruction(instr, &mut state, symbol_table))
         .collect();
 
     symbol_table.set_bytes_required(&func.name, state.current_offset).unwrap();
@@ -36,18 +47,19 @@ fn replace_func(func: &Func, symbol_table: &mut SymbolTable) -> Func {
     Func {
         name: func.name.clone(),
         instructions: fixed_instructions,
+        global: func.global
     }
 }
 
-fn replace_instruction(instruction: &Instruction, state: &mut ReplacementState) -> Instruction {
+fn replace_instruction(instruction: &Instruction, state: &mut ReplacementState, symbol_table: &mut SymbolTable) -> Instruction {
     match instruction {
         Instruction::Mov { src, dest } => {
-            let src = replace_operand(src, state);
-            let dest = replace_operand(dest, state);
+            let src = replace_operand(src, state, symbol_table);
+            let dest = replace_operand(dest, state, symbol_table);
             Instruction::Mov { src, dest }
         }
         Instruction::Unary { op, dest } => {
-            let dest = replace_operand(dest, state);
+            let dest = replace_operand(dest, state, symbol_table);
             Instruction::Unary {
                 op: op.clone(),
                 dest,
@@ -56,8 +68,8 @@ fn replace_instruction(instruction: &Instruction, state: &mut ReplacementState) 
         Instruction::AllocateStack(amt) => Instruction::AllocateStack(*amt),
         Instruction::Ret => Instruction::Ret,
         Instruction::Binary { op, src, dest } => {
-            let src = replace_operand(src, state);
-            let dest = replace_operand(dest, state);
+            let src = replace_operand(src, state, symbol_table);
+            let dest = replace_operand(dest, state, symbol_table);
             Instruction::Binary {
                 op: op.clone(),
                 src,
@@ -65,13 +77,13 @@ fn replace_instruction(instruction: &Instruction, state: &mut ReplacementState) 
             }
         }
         Instruction::Idiv(op) => {
-            let op = replace_operand(op, state);
+            let op = replace_operand(op, state, symbol_table);
             Instruction::Idiv(op)
         }
         Instruction::Cdq => Instruction::Cdq,
         Instruction::Cmp(first, second) => {
-            let first = replace_operand(first, state);
-            let second = replace_operand(second, state);
+            let first = replace_operand(first, state, symbol_table);
+            let second = replace_operand(second, state, symbol_table);
             Instruction::Cmp(first, second)
         }
         Instruction::Jmp { label } => Instruction::Jmp {
@@ -82,7 +94,7 @@ fn replace_instruction(instruction: &Instruction, state: &mut ReplacementState) 
             label: label.clone(),
         },
         Instruction::SetCond { condition, dest } => {
-            let dest = replace_operand(dest, state);
+            let dest = replace_operand(dest, state, symbol_table);
             Instruction::SetCond {
                 condition: condition.clone(),
                 dest,
@@ -90,22 +102,27 @@ fn replace_instruction(instruction: &Instruction, state: &mut ReplacementState) 
         }
         Instruction::Label(ident) => Instruction::Label(ident.clone()),
         Instruction::DeallocateStack(amt) => Instruction::DeallocateStack(*amt),
-        Instruction::Push(op) => Instruction::Push(replace_operand(op, state)),
+        Instruction::Push(op) => Instruction::Push(replace_operand(op, state, symbol_table)),
         Instruction::Call(fun) => Instruction::Call(fun.clone()),
     }
 }
 
-fn replace_operand(operand: &Operand, state: &mut ReplacementState) -> Operand {
+fn replace_operand(operand: &Operand, state: &mut ReplacementState, symbols: &mut SymbolTable) -> Operand {
     match operand {
         Operand::Pseudo(var) => {
-            match state.offset_map.get(var) {
-                None => {
-                    let new_offset = state.current_offset - 4;
-                    state.current_offset = new_offset;
-                    state.offset_map.insert(var.clone(), new_offset);
-                    Operand::Stack(new_offset)
+            if symbols.is_static(var).unwrap() {
+                Operand::Data(var.clone())
+            }
+            else {
+                match state.offset_map.get(var) {
+                    None => {
+                        let new_offset = state.current_offset - 4;
+                        state.current_offset = new_offset;
+                        state.offset_map.insert(var.clone(), new_offset);
+                        Operand::Stack(new_offset)
+                    }
+                    Some(offset) => Operand::Stack(*offset),
                 }
-                Some(offset) => Operand::Stack(*offset),
             }
         }
         _ => operand.clone(),

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use crate::{IdentifierAttr, InitialVal, Symbol, Type};
 
 pub struct SymbolTable {
-    symbols: HashMap<String, Symbol>,
+    pub symbols: HashMap<String, Symbol>,
 }
 
 impl SymbolTable {

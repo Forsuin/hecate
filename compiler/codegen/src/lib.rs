@@ -1,7 +1,8 @@
 use lir::*;
 use mir::tacky;
 use mir::tacky::Val;
-use ty::{Scope, Symbol};
+use ty::SymbolTable;
+
 use crate::fix_instructions::fix_invalid_instructions;
 use crate::replace_pseudoregisters::replace_psuedos;
 
@@ -26,14 +27,17 @@ const PARAM_PASSING_REGS: [Register; 6] = [
     Register::R9,
 ];
 
-pub fn gen_assm(tacky: &tacky::TranslationUnit, symbol_table: &mut Scope<Symbol>) -> Program {
-    let mut funcs = vec![];
+pub fn gen_assm(tacky: &tacky::TranslationUnit, symbol_table: &mut SymbolTable) -> Program {
+    let mut decls = vec![];
 
-    for func in &tacky.funcs {
-        funcs.push(gen_func(func));
+    for decl in &tacky.decls {
+        match decl {
+            tacky::Decl::Func(func) => decls.push(Decl::Func(gen_func(func))),
+            tacky::Decl::StaticVar(var) => decls.push(Decl::StaticVar(gen_static_var(var))),
+        }
     }
 
-    let prog = Program { funcs };
+    let prog = Program { decls };
 
     let mut replaced = replace_psuedos(&prog, symbol_table);
 
@@ -47,6 +51,15 @@ fn gen_func(func: &tacky::Func) -> Func {
     Func {
         name: func.name.clone(),
         instructions,
+        global: func.global,
+    }
+}
+
+fn gen_static_var(var: &tacky::StaticVar) -> StaticVar {
+    StaticVar {
+        name: var.name.clone(),
+        global: var.global,
+        init: var.init,
     }
 }
 
