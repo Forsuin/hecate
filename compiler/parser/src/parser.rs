@@ -1048,12 +1048,6 @@ mod tests {
         };
     }
 
-    macro_rules! decl_item {
-        ($decl:expr) => {
-            BlockItem::D($decl)
-        };
-    }
-
     macro_rules! case {
         ($constant:expr, $body:expr) => {
             Stmt::Case {
