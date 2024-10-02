@@ -12,6 +12,9 @@ pub enum LexError {
     UnterminatedString,
     #[error("invalid suffix")]
     InvalidSuffix(String),
+    #[error("number out of range")]
+    OutOfRange(String),
+
 }
 
 #[derive(Debug, Clone)]
@@ -389,7 +392,14 @@ impl<'a> Lexer<'a> {
                 // try to parse as an int, but automatically convert to long if too big
                 match prefix.parse::<i32>() {
                     Ok(val) => TokenValue::Integer(val),
-                    Err(_) => TokenValue::Long(prefix.parse::<i64>().unwrap()),
+                    Err(_) => match prefix.parse::<i64>() {
+                        Ok(val) => {
+                            TokenValue::Long(val)
+                        }
+                        Err(_) => {
+                            return Err(LexError::OutOfRange(source.to_string()));
+                        }
+                    }
                 }
             }
             ConstType::Long => TokenValue::Long(prefix.parse::<i64>().unwrap()),

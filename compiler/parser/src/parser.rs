@@ -6,6 +6,7 @@ use thiserror::Error;
 use ast::Expr::{Assignment, CompoundAssignment, Conditional};
 use ast::*;
 use lexer::*;
+use ty::Type;
 
 #[derive(Error, Clone, Debug)]
 pub struct ParseError {
@@ -99,8 +100,8 @@ impl Parser {
 
     fn parse_var_decl(&mut self) -> Result<VarDecl, ParseError> {
         match self.parse_decl()? {
-            Decl::FuncDecl { .. } => Err(ParseError::new(format!(
-                "Expected variable declaration but found function declaration"
+            Decl::FuncDecl(FuncDecl { ident, .. }) => Err(ParseError::new(format!(
+                "Expected variable declaration but found function declaration: '{}'", ident
             ))),
             Decl::VarDecl(var) => Ok(var),
         }
@@ -108,7 +109,7 @@ impl Parser {
 
     fn parse_decl(&mut self) -> Result<Decl, ParseError> {
         let specifiers = self.parse_specifier_list()?;
-        let (_, storage_class) = self.parse_type_and_storage(specifiers)?;
+        let (t, storage_class) = self.parse_type_and_storage(specifiers)?;
 
         let ident = self.parse_ident()?;
 
@@ -118,43 +119,41 @@ impl Parser {
                 kind: TokenType::OpenParen,
                 ..
             }) => Ok(Decl::FuncDecl(
-                self.parse_rest_func_decl(ident, storage_class)?,
+                self.parse_rest_func_decl(ident, storage_class, t)?,
             )),
             Some(_) => Ok(Decl::VarDecl(
-                self.parse_rest_var_decl(ident, storage_class)?,
+                self.parse_rest_var_decl(ident, storage_class, t)?,
             )),
         }
     }
 
     fn parse_specifier_list(&mut self) -> Result<Vec<Token>, ParseError> {
-        let mut specs = vec![];
+        let mut specifiers = vec![];
 
         loop {
             match self.peek() {
-                match_token_types!(TokenType::Int, TokenType::Static, TokenType::Extern) => {
-                    specs.push(self.tokens.next().unwrap());
+                match_token_types!(
+                    TokenType::Int,
+                    TokenType::Long,
+                    TokenType::Static,
+                    TokenType::Extern
+                ) => {
+                    specifiers.push(self.tokens.next().unwrap());
                 }
                 _ => break,
             }
         }
 
-        Ok(specs)
+        Ok(specifiers)
     }
 
     fn parse_type_and_storage(
         &mut self,
         specifiers: Vec<Token>,
-    ) -> Result<(ty::Type, Option<StorageClass>), ParseError> {
+    ) -> Result<(Type, Option<StorageClass>), ParseError> {
         let (types, storage_classes): (Vec<_>, Vec<_>) = specifiers
             .into_iter()
-            .partition(|spec| spec.kind == TokenType::Int);
-
-        if types.len() != 1 {
-            return Err(ParseError::new(format!(
-                "Expected one type specifier, found multiple: '{:?}'",
-                types
-            )));
-        }
+            .partition(|spec| matches!(spec.kind, TokenType::Int | TokenType::Long));
 
         if storage_classes.len() > 1 {
             return Err(ParseError::new(format!(
@@ -163,7 +162,7 @@ impl Parser {
             )));
         }
 
-        let ty = ty::Type::Int;
+        let ty = self.parse_type(types)?;
         let mut storage_class = None;
 
         if !storage_classes.is_empty() {
@@ -184,10 +183,37 @@ impl Parser {
         }
     }
 
+    fn parse_type(&self, types: Vec<Token>) -> Result<Type, ParseError> {
+        match types
+            .iter()
+            .map(|t| t.kind)
+            .collect::<Vec<TokenType>>()
+            .as_slice()
+        {
+            [TokenType::Int] => Ok(Type::Int),
+            [TokenType::Long]
+            | [TokenType::Int, TokenType::Long]
+            | [TokenType::Long, TokenType::Int] => Ok(Type::Long),
+            [tokens @ ..] => {
+                let invalid = tokens
+                    .iter()
+                    .map(|t| format!("{:?}", t))
+                    .collect::<Vec<String>>()
+                    .join(", ");
+
+                Err(ParseError::new(format!(
+                    "Invalid type specifier(s): '{:?}'",
+                    invalid
+                )))
+            }
+        }
+    }
+
     fn parse_rest_func_decl(
         &mut self,
         name: String,
         storage_class: Option<StorageClass>,
+        func_type: Type
     ) -> Result<FuncDecl, ParseError> {
         self.expect(TokenType::OpenParen)?;
 
@@ -263,6 +289,7 @@ impl Parser {
             params: param_list,
             body,
             storage_class,
+            func_type,
         })
     }
 
@@ -270,6 +297,7 @@ impl Parser {
         &mut self,
         name: String,
         storage_class: Option<StorageClass>,
+        var_type: Type
     ) -> Result<VarDecl, ParseError> {
         let init;
 
@@ -306,6 +334,7 @@ impl Parser {
             name,
             init,
             storage_class,
+            var_type,
         })
     }
 
@@ -742,12 +771,10 @@ impl Parser {
             }
             Some(Token {
                 kind: TokenType::Constant,
-                value: TokenValue::Integer(val),
                 ..
             }) => {
-                let val = val.clone();
-                self.tokens.next();
-                Ok(Expr::Constant(val))
+                let value = self.parse_constant()?;
+                Ok(Expr::Constant(value))
             }
             Some(Token {
                 kind: TokenType::Identifier,
@@ -773,6 +800,33 @@ impl Parser {
                 "Expected a factor, found '{:?}'",
                 t
             ))),
+        }
+    }
+
+    fn parse_constant(&mut self) -> Result<Constant, ParseError> {
+        let token = self.tokens.next();
+
+        match token {
+            None => Err(ParseError::new("Unexpected end of file, expected constant".to_string())),
+            Some(token) => {
+                match token {
+                    Token {
+                             kind: TokenType::Constant,
+                             value: TokenValue::Integer(value),
+                             ..
+                         } => {
+                        Ok(Constant::Int(value))
+                    },
+                    Token {
+                             kind: TokenType::Constant,
+                             value: TokenValue::Long(value),
+                             ..
+                         } => {
+                        Ok(Constant::Long(value))
+                    },
+                    _ => Err(ParseError::new(format!("Expected constant, found '{:?} at ({}, {})'", token.kind, token.line, token.col)))
+                }
+            }
         }
     }
 
@@ -1058,10 +1112,16 @@ mod tests {
         };
     }
 
+    // Creates a Constant::Int expression, prefer to use constant
     macro_rules! const_expr {
         ($expr:expr) => {
-            Expr::Constant($expr)
-        };
+            constant!($expr, i32)
+        }
+    }
+
+    macro_rules! constant {
+        ($expr:expr, i32) => { Expr::Constant(Constant::Int($expr)) };
+        ($expr:expr, i64) => { Expr::Constant(Constant::Long($expr)) };
     }
 
     macro_rules! break_stmt {
@@ -1092,8 +1152,8 @@ mod tests {
             ast,
             Expr::Binary {
                 op: BinaryOp::Add,
-                left: Box::new(Expr::Constant(3)),
-                right: Box::new(Expr::Constant(5)),
+                left: Box::new(Expr::Constant(Constant::Int(3))),
+                right: Box::new(Expr::Constant(Constant::Int(5))),
             }
         )
     }
@@ -1109,8 +1169,8 @@ mod tests {
             ast,
             Expr::Binary {
                 op: BinaryOp::Subtract,
-                left: Box::new(Expr::Constant(3)),
-                right: Box::new(Expr::Constant(5)),
+                left: Box::new(Expr::Constant(Constant::Int(3))),
+                right: Box::new(Expr::Constant(Constant::Int(5))),
             }
         )
     }
@@ -1126,8 +1186,8 @@ mod tests {
             ast,
             Expr::Binary {
                 op: BinaryOp::Multiply,
-                left: Box::new(Expr::Constant(3)),
-                right: Box::new(Expr::Constant(5)),
+                left: Box::new(Expr::Constant(Constant::Int(3))),
+                right: Box::new(Expr::Constant(Constant::Int(5))),
             }
         )
     }
@@ -1143,8 +1203,8 @@ mod tests {
             ast,
             Expr::Binary {
                 op: BinaryOp::Divide,
-                left: Box::new(Expr::Constant(3)),
-                right: Box::new(Expr::Constant(5)),
+                left: Box::new(Expr::Constant(Constant::Int(3))),
+                right: Box::new(Expr::Constant(Constant::Int(5))),
             }
         )
     }
@@ -1160,8 +1220,8 @@ mod tests {
             ast,
             Expr::Binary {
                 op: BinaryOp::Modulo,
-                left: Box::new(Expr::Constant(3)),
-                right: Box::new(Expr::Constant(5)),
+                left: Box::new(Expr::Constant(Constant::Int(3))),
+                right: Box::new(Expr::Constant(Constant::Int(5))),
             }
         )
     }
@@ -1179,10 +1239,10 @@ mod tests {
                 op: BinaryOp::Add,
                 left: Box::new(Expr::Binary {
                     op: BinaryOp::Add,
-                    left: Box::new(Expr::Constant(3)),
-                    right: Box::new(Expr::Constant(5)),
+                    left: Box::new(Expr::Constant(Constant::Int(3))),
+                    right: Box::new(Expr::Constant(Constant::Int(5))),
                 }),
-                right: Box::new(Expr::Constant(6)),
+                right: Box::new(Expr::Constant(Constant::Int(6))),
             }
         )
     }
@@ -1200,13 +1260,13 @@ mod tests {
                 op: BinaryOp::Add,
                 left: Box::new(Expr::Binary {
                     op: BinaryOp::Add,
-                    left: Box::new(Expr::Constant(3)),
-                    right: Box::new(Expr::Constant(5)),
+                    left: Box::new(Expr::Constant(Constant::Int(3))),
+                    right: Box::new(Expr::Constant(Constant::Int(5))),
                 }),
                 right: Box::new(Expr::Binary {
                     op: BinaryOp::Multiply,
-                    left: Box::new(Expr::Constant(6)),
-                    right: Box::new(Expr::Constant(2)),
+                    left: Box::new(Expr::Constant(Constant::Int(6))),
+                    right: Box::new(Expr::Constant(Constant::Int(2))),
                 }),
             }
         )
@@ -1225,12 +1285,12 @@ mod tests {
                 op: BinaryOp::Add,
                 left: Box::new(Expr::Binary {
                     op: BinaryOp::Add,
-                    left: Box::new(Expr::Constant(3)),
-                    right: Box::new(Expr::Constant(5)),
+                    left: Box::new(Expr::Constant(Constant::Int(3))),
+                    right: Box::new(Expr::Constant(Constant::Int(5))),
                 }),
                 right: Box::new(Expr::Unary {
                     op: UnaryOp::Negate,
-                    expr: Box::new(Expr::Constant(6))
+                    expr: Box::new(Expr::Constant(Constant::Int(6)))
                 }),
             }
         )
@@ -1249,10 +1309,10 @@ mod tests {
                 condition: Expr::Binary {
                     op: BinaryOp::Equal,
                     left: Box::from(Expr::Var("a".to_string())),
-                    right: Box::from(Expr::Constant(0)),
+                    right: Box::from(Expr::Constant(Constant::Int(0))),
                 },
                 then: Box::new(Stmt::Return {
-                    expr: Expr::Constant(5)
+                    expr: Expr::Constant(Constant::Int(5))
                 }),
                 otherwise: None,
             }
@@ -1272,13 +1332,13 @@ mod tests {
                 condition: Expr::Binary {
                     op: BinaryOp::Equal,
                     left: Box::from(Expr::Var("a".to_string())),
-                    right: Box::from(Expr::Constant(0)),
+                    right: Box::from(Expr::Constant(Constant::Int(0))),
                 },
                 then: Box::new(Stmt::Return {
-                    expr: Expr::Constant(5)
+                    expr: Expr::Constant(Constant::Int(5))
                 }),
                 otherwise: Some(Box::new(Stmt::Return {
-                    expr: Expr::Constant(4)
+                    expr: Expr::Constant(Constant::Int(4))
                 })),
             }
         )
@@ -1297,22 +1357,22 @@ mod tests {
                 condition: Expr::Binary {
                     op: BinaryOp::Greater,
                     left: Box::from(Expr::Var("a".to_string())),
-                    right: Box::from(Expr::Constant(100)),
+                    right: Box::from(Expr::Constant(Constant::Int(100))),
                 },
                 then: Box::new(Stmt::Return {
-                    expr: Expr::Constant(0)
+                    expr: Expr::Constant(Constant::Int(0))
                 }),
                 otherwise: Some(Box::new(Stmt::If {
                     condition: Expr::Binary {
                         op: BinaryOp::Greater,
                         left: Box::from(Expr::Var("a".to_string())),
-                        right: Box::from(Expr::Constant(50)),
+                        right: Box::from(Expr::Constant(Constant::Int(50))),
                     },
                     then: Box::new(Stmt::Return {
-                        expr: Expr::Constant(1)
+                        expr: Expr::Constant(Constant::Int(1))
                     }),
                     otherwise: Some(Box::new(Stmt::Return {
-                        expr: Expr::Constant(2)
+                        expr: Expr::Constant(Constant::Int(2))
                     })),
                 })),
             }
@@ -1330,8 +1390,8 @@ mod tests {
             ast,
             Expr::Conditional {
                 condition: Box::from(Expr::Var("a".to_string())),
-                then: Box::from(Expr::Constant(1)),
-                otherwise: Box::from(Expr::Constant(0)),
+                then: Box::from(Expr::Constant(Constant::Int(1))),
+                otherwise: Box::from(Expr::Constant(Constant::Int(0))),
             }
         )
     }
@@ -1348,9 +1408,9 @@ mod tests {
             Expr::Assignment {
                 lvalue: Box::new(Expr::Var("a".to_string())),
                 expr: Box::new(Expr::Conditional {
-                    condition: Box::from(Expr::Constant(1)),
-                    then: Box::from(Expr::Constant(2)),
-                    otherwise: Box::from(Expr::Constant(3)),
+                    condition: Box::from(Expr::Constant(Constant::Int(1))),
+                    then: Box::from(Expr::Constant(Constant::Int(2))),
+                    otherwise: Box::from(Expr::Constant(Constant::Int(3))),
                 }),
             }
         )
@@ -1368,12 +1428,12 @@ mod tests {
             Expr::Assignment {
                 lvalue: Box::new(Expr::Var("a".to_string())),
                 expr: Box::new(Expr::Conditional {
-                    condition: Box::from(Expr::Constant(1)),
-                    then: Box::from(Expr::Constant(2)),
+                    condition: Box::from(Expr::Constant(Constant::Int(1))),
+                    then: Box::from(Expr::Constant(Constant::Int(2))),
                     otherwise: Box::from(Expr::Binary {
                         op: BinaryOp::Or,
-                        left: Box::new(Expr::Constant(3)),
-                        right: Box::new(Expr::Constant(4)),
+                        left: Box::new(Expr::Constant(Constant::Int(3))),
+                        right: Box::new(Expr::Constant(Constant::Int(4))),
                     }),
                 }),
             }
@@ -1393,7 +1453,7 @@ mod tests {
                 body: Box::new(Stmt::Break {
                     label: "".to_string()
                 }),
-                condition: Expr::Constant(1),
+                condition: Expr::Constant(Constant::Int(1)),
                 label: "".to_string(),
             }
         )
@@ -1412,7 +1472,7 @@ mod tests {
                 body: Box::new(Stmt::Continue {
                     label: "".to_string()
                 }),
-                condition: Expr::Constant(1),
+                condition: Expr::Constant(Constant::Int(1)),
                 label: "".to_string(),
             }
         )
@@ -1431,7 +1491,7 @@ mod tests {
                 condition: Expr::Binary {
                     op: BinaryOp::Greater,
                     left: Box::new(Expr::Var("x".to_string())),
-                    right: Box::new(Expr::Constant(0)),
+                    right: Box::new(Expr::Constant(Constant::Int(0))),
                 },
                 body: Box::new(Stmt::Expression {
                     expr: Expr::PostfixDec(Box::new(Expr::Var("x".to_string()))),
@@ -1477,11 +1537,9 @@ mod tests {
             ast,
             Decl::VarDecl(VarDecl {
                 name: "a".to_string(),
-                init: Some(Expr::Assignment {
-                    lvalue: Box::new(Expr::Var("a".to_string())),
-                    expr: Box::new(Expr::Constant(3))
-                }),
-                storage_class: Some(StorageClass::Static)
+                init: Some(Expr::Constant(Constant::Int(3))),
+                storage_class: Some(StorageClass::Static),
+                var_type: Type::Int,
             })
         )
     }
@@ -1497,18 +1555,16 @@ mod tests {
             ast,
             Decl::VarDecl(VarDecl {
                 name: "a".to_string(),
-                init: Some(Expr::Assignment {
-                    lvalue: Box::new(Expr::Var("a".to_string())),
-                    expr: Box::new(Expr::Constant(3))
-                }),
-                storage_class: Some(StorageClass::Static)
+                init: Some(Expr::Constant(Constant::Int(3))),
+                storage_class: Some(StorageClass::Static),
+                var_type: Type::Int,
             })
         )
     }
 
     #[test]
     fn extern_var_decl() {
-        let src = "static int a = 3;";
+        let src = "extern int a = 3;";
         let tokens = Lexer::new(src).tokenize().collect();
 
         let ast = Parser::new(tokens).parse_decl().unwrap();
@@ -1517,11 +1573,91 @@ mod tests {
             ast,
             Decl::VarDecl(VarDecl {
                 name: "a".to_string(),
-                init: Some(Expr::Assignment {
-                    lvalue: Box::new(Expr::Var("a".to_string())),
-                    expr: Box::new(Expr::Constant(3))
-                }),
-                storage_class: Some(StorageClass::Extern)
+                init: Some(
+                    Expr::Constant(Constant::Int(3))
+                ),
+                storage_class: Some(StorageClass::Extern),
+                var_type: Type::Int,
+            })
+        )
+    }
+
+    #[test]
+    fn long_decl() {
+        let src = "long a = 3;";
+        let tokens = Lexer::new(src).tokenize().collect();
+
+        let ast = Parser::new(tokens).parse_decl().unwrap();
+
+        assert_eq!(
+            ast,
+            Decl::VarDecl(VarDecl {
+                name: "a".to_string(),
+                init: Some(
+                    Expr::Constant(Constant::Int(3))
+                ),
+                storage_class: None,
+                var_type: Type::Long,
+            })
+        )
+    }
+
+    #[test]
+    fn long_int_decl() {
+        let src = "long int a = 3;";
+        let tokens = Lexer::new(src).tokenize().collect();
+
+        let ast = Parser::new(tokens).parse_decl().unwrap();
+
+        assert_eq!(
+            ast,
+            Decl::VarDecl(VarDecl {
+                name: "a".to_string(),
+                init: Some(
+                    Expr::Constant(Constant::Int(3))
+                ),
+                storage_class: None,
+                var_type: Type::Long,
+            })
+        )
+    }
+
+    #[test]
+    fn int_long_decl() {
+        let src = "int long a = 3;";
+        let tokens = Lexer::new(src).tokenize().collect();
+
+        let ast = Parser::new(tokens).parse_decl().unwrap();
+
+        assert_eq!(
+            ast,
+            Decl::VarDecl(VarDecl {
+                name: "a".to_string(),
+                init: Some(
+                    Expr::Constant(Constant::Int(3))
+                ),
+                storage_class: None,
+                var_type: Type::Long,
+            })
+        )
+    }
+
+    #[test]
+    fn long_int_decl_with_long_constant() {
+        let src = "long int a = 5000000000;";
+        let tokens = Lexer::new(src).tokenize().collect();
+
+        let ast = Parser::new(tokens).parse_decl().unwrap();
+
+        assert_eq!(
+            ast,
+            Decl::VarDecl(VarDecl {
+                name: "a".to_string(),
+                init: Some(
+                    Expr::Constant(Constant::Long(5_000_000_000))
+                ),
+                storage_class: None,
+                var_type: Type::Long,
             })
         )
     }

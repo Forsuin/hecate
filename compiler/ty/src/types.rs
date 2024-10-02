@@ -1,12 +1,14 @@
-#[derive(Debug, Clone, PartialEq, Copy)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
     Int,
+    Long,
     Func(FuncType),
 }
 
-#[derive(Debug, Clone, PartialEq, Copy)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FuncType {
-    pub param_count: usize,
+    pub param_types: Vec<Type>,
+    pub return_type: Box<Type>,
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]

@@ -1,3 +1,5 @@
+use ty::Type;
+
 /// Defines AST datatypes
 
 #[derive(Debug, Eq, PartialEq)]
@@ -17,6 +19,7 @@ pub struct FuncDecl {
     pub params: Vec<String>,
     pub body: Option<Block>,
     pub storage_class: Option<StorageClass>,
+    pub func_type: Type,
 }
 
 #[derive(Debug, Eq, PartialEq, Clone)]
@@ -24,6 +27,7 @@ pub struct VarDecl {
     pub name: String,
     pub init: Option<Expr>,
     pub storage_class: Option<StorageClass>,
+    pub var_type: Type,
 }
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
@@ -114,7 +118,7 @@ pub enum Stmt {
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub enum Expr {
-    Constant(i32),
+    Constant(Constant),
     Var(String),
     Unary {
         op: UnaryOp,
@@ -145,6 +149,16 @@ pub enum Expr {
         func: String,
         args: Vec<Expr>,
     },
+    Cast {
+        target_type: Type,
+        expr: Box<Expr>,
+    },
+}
+
+#[derive(Debug, Eq, PartialEq, Clone)]
+pub enum Constant {
+    Int(i32),
+    Long(i64),
 }
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
