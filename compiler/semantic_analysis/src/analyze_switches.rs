@@ -5,7 +5,7 @@ use unique_ident::make_label;
 
 use crate::sem_err::*;
 
-type CaseMap = HashMap<Option<i32>, String>;
+type CaseMap = HashMap<Option<Constant>, String>;
 
 pub fn analyze_switches(program: &mut TranslationUnit) -> SemanticResult<()> {
     for decl in &mut program.decls {
@@ -54,8 +54,8 @@ fn analyze_stmt(stmt: &mut Stmt, case_map: &mut Option<CaseMap>) -> SemanticResu
             body,
             label,
         } => {
-            let constant = match constant {
-                Expr::Constant(c) => Some(*c),
+            let constant = match &constant.kind {
+                ExprKind::Constant(c) => Some(c.clone()),
                 _ => {
                     return Err(SemErr::new(format!(
                         "Non-constant label in case statement: {:#?}",
@@ -118,7 +118,7 @@ fn analyze_stmt(stmt: &mut Stmt, case_map: &mut Option<CaseMap>) -> SemanticResu
 }
 
 fn analyze_case(
-    key: Option<i32>,
+    key: Option<Constant>,
     case_map: &mut Option<CaseMap>,
     label: &str,
     body: &mut Stmt,

@@ -3,7 +3,7 @@ use std::iter::Peekable;
 
 use thiserror::Error;
 
-use ast::Expr::{Assignment, CompoundAssignment, Conditional};
+use ast::ExprKind::{Assignment, CompoundAssignment, Conditional};
 use ast::*;
 use lexer::*;
 use ty::Type;
@@ -370,6 +370,7 @@ impl Parser {
 
                 self.expect(TokenType::Semicolon)?;
 
+
                 Ok(Stmt::Return { expr })
             }
             (
@@ -664,15 +665,15 @@ impl Parser {
                         self.tokens.next();
                         let right = self.parse_expr(get_precedence(next.kind).unwrap())?;
                         left = match get_compound(next.kind) {
-                            None => Assignment {
+                            None => Expr::new(Assignment {
                                 lvalue: Box::from(left),
                                 expr: Box::from(right),
-                            },
-                            Some(op) => CompoundAssignment {
+                            }),
+                            Some(op) => Expr::new(CompoundAssignment {
                                 op,
                                 lvalue: Box::from(left),
                                 expr: Box::from(right),
-                            },
+                            }),
                         }
                     } else if next.kind == TokenType::Question {
                         self.expect(TokenType::Question)?;
@@ -681,19 +682,19 @@ impl Parser {
 
                         let right = self.parse_expr(get_precedence(next.kind).unwrap())?;
 
-                        left = Conditional {
+                        left = Expr::new(Conditional {
                             condition: Box::from(left),
                             then: Box::from(middle),
                             otherwise: Box::from(right),
-                        }
+                        })
                     } else {
                         let operator = self.parse_binop()?;
                         let right = self.parse_expr(prec + 1)?;
-                        left = Expr::Binary {
+                        left = Expr::new(ExprKind::Binary {
                             op: operator,
                             left: Box::new(left),
                             right: Box::new(right),
-                        }
+                        })
                     }
                 } else {
                     break;
@@ -718,10 +719,10 @@ impl Parser {
                 let unop = self.parse_unop()?;
                 let expr = self.parse_factor()?;
 
-                Ok(Expr::Unary {
+                Ok(Expr::new(ExprKind::Unary {
                     op: unop,
                     expr: Box::new(expr),
-                })
+                }))
             }
             Some(_) => self.parse_postfix_expr(),
             None => Err(ParseError::new(
@@ -742,7 +743,7 @@ impl Parser {
                 ..
             }) => {
                 self.tokens.next();
-                let dec_expr = Expr::PostfixDec(Box::from(expr));
+                let dec_expr = Expr::new(ExprKind::PostfixDec(Box::from(expr)));
                 self.postfix_helper(dec_expr)
             }
             Some(Token {
@@ -750,7 +751,7 @@ impl Parser {
                 ..
             }) => {
                 self.tokens.next();
-                let dec_expr = Expr::PostfixInc(Box::from(expr));
+                let dec_expr = Expr::new(ExprKind::PostfixInc(Box::from(expr)));
                 self.postfix_helper(dec_expr)
             }
             _ => Ok(expr),
@@ -774,7 +775,7 @@ impl Parser {
                 ..
             }) => {
                 let value = self.parse_constant()?;
-                Ok(Expr::Constant(value))
+                Ok(Expr::new(ExprKind::Constant(value)))
             }
             Some(Token {
                 kind: TokenType::Identifier,
@@ -791,9 +792,9 @@ impl Parser {
                 {
                     let args = self.parse_arg_list()?;
 
-                    Ok(Expr::FunctionCall { func: ident, args })
+                    Ok(Expr::new(ExprKind::FunctionCall { func: ident, args }))
                 } else {
-                    Ok(Expr::Var(ident))
+                    Ok(Expr::new(ExprKind::Var(ident)))
                 }
             }
             t => Err(ParseError::new(format!(
@@ -1092,6 +1093,8 @@ fn get_compound(token_type: TokenType) -> Option<BinaryOp> {
 
 #[cfg(test)]
 mod tests {
+    use ast::ExprKind::*;
+    use ast::Constant;
     use lexer::*;
 
     use super::*;
@@ -1112,7 +1115,7 @@ mod tests {
         };
     }
 
-    // Creates a Constant::Int expression, prefer to use constant
+    // Creates a Constant::Int expression, prefer to use constant!()
     macro_rules! const_expr {
         ($expr:expr) => {
             constant!($expr, i32)
@@ -1120,8 +1123,8 @@ mod tests {
     }
 
     macro_rules! constant {
-        ($expr:expr, i32) => { Expr::Constant(Constant::Int($expr)) };
-        ($expr:expr, i64) => { Expr::Constant(Constant::Long($expr)) };
+        ($expr:expr, i32) => { Expr::new(ExprKind::Constant(Constant::Int($expr))) };
+        ($expr:expr, i64) => { Expr::new(ExprKind::Constant(Constant::Long($expr))) };
     }
 
     macro_rules! break_stmt {
@@ -1141,6 +1144,79 @@ mod tests {
         };
     }
 
+    macro_rules! var {
+        ($expr:literal) => {
+            // String::from() so only string literals are accepted
+            Expr::new(ExprKind::Var(String::from($expr)))
+        };
+    }
+
+    /// Macro for generating a binary expression
+    /// left and right expressions do NOT need to be boxed, the macro handles that
+    macro_rules! binary {
+        ($op:expr, $left:expr, $right:expr) => {
+            Expr::new(ExprKind::Binary {
+                op: $op,
+                left: Box::new($left),
+                right: Box::new($right),
+            })
+        };
+    }
+
+    /// Macro for generating a unary expression
+    /// expr does NOT need to be boxed, the macro handles that
+    macro_rules! unary {
+        ($op:expr, $expr:expr) => {
+            Expr::new(ExprKind::Unary {
+                op: $op,
+                expr: Box::new($expr),
+            })
+        };
+    }
+
+    /// Macro for generating a conditional expression
+    /// condition, then, and otherwise do NOT need to be boxed, the macro handles that
+    macro_rules! conditional {
+        ($cond:expr, $then:expr, $otherwise:expr) => {
+            Expr::new(ExprKind::Conditional {
+                condition: Box::new($cond),
+                then: Box::new($then),
+                otherwise: Box::new($otherwise),
+            })
+        };
+    }
+
+    macro_rules! assignment {
+        ($lvalue:expr, $expr:expr) => {
+            Expr::new(ExprKind::Assignment {
+                lvalue: Box::new($lvalue),
+                expr: Box::new($expr),
+            })
+        };
+    }
+
+    macro_rules! compound_assignment {
+        ($op:expr, $lvalue:expr, $expr:expr) => {
+            Expr::new(ExprKind::CompoundAssignment {
+                op: $op,
+                lvalue: Box::new($lvalue),
+                expr: Box::new($expr),
+            })
+        };
+    }
+
+    macro_rules! postfix_dec {
+        ($expr:expr) => {
+            Expr::new(PostfixDec(Box::new($expr)))
+        };
+    }
+
+    macro_rules! postfix_inc {
+        ($expr:expr) => {
+            Expr::new(PostfixInc(Box::new($expr)))
+        };
+    }
+
     #[test]
     fn simple_add() {
         let src = "3 + 5";
@@ -1150,11 +1226,7 @@ mod tests {
 
         assert_eq!(
             ast,
-            Expr::Binary {
-                op: BinaryOp::Add,
-                left: Box::new(Expr::Constant(Constant::Int(3))),
-                right: Box::new(Expr::Constant(Constant::Int(5))),
-            }
+            binary!(BinaryOp::Add, constant!(3, i32), constant!(5, i32))
         )
     }
 
@@ -1167,11 +1239,7 @@ mod tests {
 
         assert_eq!(
             ast,
-            Expr::Binary {
-                op: BinaryOp::Subtract,
-                left: Box::new(Expr::Constant(Constant::Int(3))),
-                right: Box::new(Expr::Constant(Constant::Int(5))),
-            }
+            binary!(BinaryOp::Subtract, constant!(3, i32), constant!(5, i32))
         )
     }
 
@@ -1184,11 +1252,7 @@ mod tests {
 
         assert_eq!(
             ast,
-            Expr::Binary {
-                op: BinaryOp::Multiply,
-                left: Box::new(Expr::Constant(Constant::Int(3))),
-                right: Box::new(Expr::Constant(Constant::Int(5))),
-            }
+            binary!(BinaryOp::Multiply, constant!(3, i32), constant!(5, i32))
         )
     }
 
@@ -1201,11 +1265,7 @@ mod tests {
 
         assert_eq!(
             ast,
-            Expr::Binary {
-                op: BinaryOp::Divide,
-                left: Box::new(Expr::Constant(Constant::Int(3))),
-                right: Box::new(Expr::Constant(Constant::Int(5))),
-            }
+            binary!(BinaryOp::Divide, constant!(3, i32), constant!(5, i32))
         )
     }
 
@@ -1218,11 +1278,7 @@ mod tests {
 
         assert_eq!(
             ast,
-            Expr::Binary {
-                op: BinaryOp::Modulo,
-                left: Box::new(Expr::Constant(Constant::Int(3))),
-                right: Box::new(Expr::Constant(Constant::Int(5))),
-            }
+            binary!(BinaryOp::Modulo, constant!(3, i32), constant!(5, i32))
         )
     }
 
@@ -1235,15 +1291,7 @@ mod tests {
 
         assert_eq!(
             ast,
-            Expr::Binary {
-                op: BinaryOp::Add,
-                left: Box::new(Expr::Binary {
-                    op: BinaryOp::Add,
-                    left: Box::new(Expr::Constant(Constant::Int(3))),
-                    right: Box::new(Expr::Constant(Constant::Int(5))),
-                }),
-                right: Box::new(Expr::Constant(Constant::Int(6))),
-            }
+            binary!(BinaryOp::Add, binary!(BinaryOp::Add, constant!(3, i32), constant!(5, i32)), constant!(6, i32))
         )
     }
 
@@ -1254,21 +1302,13 @@ mod tests {
 
         let ast = Parser::new(tokens).parse_expr(0).unwrap();
 
+
         assert_eq!(
             ast,
-            Expr::Binary {
-                op: BinaryOp::Add,
-                left: Box::new(Expr::Binary {
-                    op: BinaryOp::Add,
-                    left: Box::new(Expr::Constant(Constant::Int(3))),
-                    right: Box::new(Expr::Constant(Constant::Int(5))),
-                }),
-                right: Box::new(Expr::Binary {
-                    op: BinaryOp::Multiply,
-                    left: Box::new(Expr::Constant(Constant::Int(6))),
-                    right: Box::new(Expr::Constant(Constant::Int(2))),
-                }),
-            }
+            binary!(BinaryOp::Add,
+                binary!(BinaryOp::Add, constant!(3, i32), constant!(5, i32)),
+                binary!(BinaryOp::Multiply, constant!(6, i32), constant!(2, i32))
+            )
         )
     }
 
@@ -1279,20 +1319,14 @@ mod tests {
 
         let ast = Parser::new(tokens).parse_expr(0).unwrap();
 
+
+
         assert_eq!(
             ast,
-            Expr::Binary {
-                op: BinaryOp::Add,
-                left: Box::new(Expr::Binary {
-                    op: BinaryOp::Add,
-                    left: Box::new(Expr::Constant(Constant::Int(3))),
-                    right: Box::new(Expr::Constant(Constant::Int(5))),
-                }),
-                right: Box::new(Expr::Unary {
-                    op: UnaryOp::Negate,
-                    expr: Box::new(Expr::Constant(Constant::Int(6)))
-                }),
-            }
+        binary!(BinaryOp::Add,
+                binary!(BinaryOp::Add, constant!(3, i32), constant!(5, i32)),
+                unary!(UnaryOp::Negate, constant!(6, i32))
+            )
         )
     }
 
@@ -1306,13 +1340,9 @@ mod tests {
         assert_eq!(
             ast,
             Stmt::If {
-                condition: Expr::Binary {
-                    op: BinaryOp::Equal,
-                    left: Box::from(Expr::Var("a".to_string())),
-                    right: Box::from(Expr::Constant(Constant::Int(0))),
-                },
+                condition: binary!(BinaryOp::Equal, var!("a"), constant!(0, i32)),
                 then: Box::new(Stmt::Return {
-                    expr: Expr::Constant(Constant::Int(5))
+                    expr: constant!(5, i32)
                 }),
                 otherwise: None,
             }
@@ -1329,16 +1359,12 @@ mod tests {
         assert_eq!(
             ast,
             Stmt::If {
-                condition: Expr::Binary {
-                    op: BinaryOp::Equal,
-                    left: Box::from(Expr::Var("a".to_string())),
-                    right: Box::from(Expr::Constant(Constant::Int(0))),
-                },
+                condition: binary!(BinaryOp::Equal, var!("a"), constant!(0, i32)),
                 then: Box::new(Stmt::Return {
-                    expr: Expr::Constant(Constant::Int(5))
+                    expr: constant!(5, i32)
                 }),
                 otherwise: Some(Box::new(Stmt::Return {
-                    expr: Expr::Constant(Constant::Int(4))
+                    expr: constant!(4, i32)
                 })),
             }
         )
@@ -1354,25 +1380,17 @@ mod tests {
         assert_eq!(
             ast,
             Stmt::If {
-                condition: Expr::Binary {
-                    op: BinaryOp::Greater,
-                    left: Box::from(Expr::Var("a".to_string())),
-                    right: Box::from(Expr::Constant(Constant::Int(100))),
-                },
+                condition: binary!(BinaryOp::Greater, var!("a"), constant!(100, i32)),
                 then: Box::new(Stmt::Return {
-                    expr: Expr::Constant(Constant::Int(0))
+                    expr: constant!(0, i32)
                 }),
                 otherwise: Some(Box::new(Stmt::If {
-                    condition: Expr::Binary {
-                        op: BinaryOp::Greater,
-                        left: Box::from(Expr::Var("a".to_string())),
-                        right: Box::from(Expr::Constant(Constant::Int(50))),
-                    },
+                    condition: binary!(BinaryOp::Greater, var!("a"), constant!(50, i32)),
                     then: Box::new(Stmt::Return {
-                        expr: Expr::Constant(Constant::Int(1))
+                        expr: constant!(1, i32)
                     }),
                     otherwise: Some(Box::new(Stmt::Return {
-                        expr: Expr::Constant(Constant::Int(2))
+                        expr: constant!(2, i32)
                     })),
                 })),
             }
@@ -1388,11 +1406,7 @@ mod tests {
 
         assert_eq!(
             ast,
-            Expr::Conditional {
-                condition: Box::from(Expr::Var("a".to_string())),
-                then: Box::from(Expr::Constant(Constant::Int(1))),
-                otherwise: Box::from(Expr::Constant(Constant::Int(0))),
-            }
+            conditional!(var!("a"), constant!(1, i32), constant!(0, i32))
         )
     }
 
@@ -1405,14 +1419,9 @@ mod tests {
 
         assert_eq!(
             ast,
-            Expr::Assignment {
-                lvalue: Box::new(Expr::Var("a".to_string())),
-                expr: Box::new(Expr::Conditional {
-                    condition: Box::from(Expr::Constant(Constant::Int(1))),
-                    then: Box::from(Expr::Constant(Constant::Int(2))),
-                    otherwise: Box::from(Expr::Constant(Constant::Int(3))),
-                }),
-            }
+            assignment!(var!("a"),
+                conditional!(constant!(1, i32), constant!(2, i32), constant!(3, i32))
+            )
         )
     }
 
@@ -1425,18 +1434,11 @@ mod tests {
 
         assert_eq!(
             ast,
-            Expr::Assignment {
-                lvalue: Box::new(Expr::Var("a".to_string())),
-                expr: Box::new(Expr::Conditional {
-                    condition: Box::from(Expr::Constant(Constant::Int(1))),
-                    then: Box::from(Expr::Constant(Constant::Int(2))),
-                    otherwise: Box::from(Expr::Binary {
-                        op: BinaryOp::Or,
-                        left: Box::new(Expr::Constant(Constant::Int(3))),
-                        right: Box::new(Expr::Constant(Constant::Int(4))),
-                    }),
-                }),
-            }
+            assignment!(var!("a"),
+                conditional!(constant!(1, i32), constant!(2, i32),
+                    binary!(BinaryOp::Or, constant!(3, i32), constant!(4, i32))
+                )
+            )
         )
     }
 
@@ -1453,7 +1455,7 @@ mod tests {
                 body: Box::new(Stmt::Break {
                     label: "".to_string()
                 }),
-                condition: Expr::Constant(Constant::Int(1)),
+                condition: constant!(1, i32),
                 label: "".to_string(),
             }
         )
@@ -1472,7 +1474,7 @@ mod tests {
                 body: Box::new(Stmt::Continue {
                     label: "".to_string()
                 }),
-                condition: Expr::Constant(Constant::Int(1)),
+                condition: constant!(1, i32),
                 label: "".to_string(),
             }
         )
@@ -1488,16 +1490,25 @@ mod tests {
         assert_eq!(
             ast,
             Stmt::While {
-                condition: Expr::Binary {
-                    op: BinaryOp::Greater,
-                    left: Box::new(Expr::Var("x".to_string())),
-                    right: Box::new(Expr::Constant(Constant::Int(0))),
-                },
+                condition: binary!(BinaryOp::Greater, var!("x"), constant!(0, i32)),
                 body: Box::new(Stmt::Expression {
-                    expr: Expr::PostfixDec(Box::new(Expr::Var("x".to_string()))),
+                    expr: postfix_dec!(var!("x")),
                 }),
                 label: "".to_string(),
             }
+        )
+    }
+
+    #[test]
+    fn postfix_inc() {
+        let src = "x++";
+        let tokens = Lexer::new(src).tokenize().collect();
+
+        let ast = Parser::new(tokens).parse_expr(0).unwrap();
+
+        assert_eq!(
+            ast,
+            postfix_inc!(var!("x"))
         )
     }
 
@@ -1511,7 +1522,7 @@ mod tests {
         assert_eq!(
             ast,
             Stmt::Switch {
-                control: Expr::Var("x".to_string()),
+                control: var!("x"),
                 body: Box::new(Stmt::Compound {
                     block: Block {
                         items: vec![
@@ -1537,7 +1548,7 @@ mod tests {
             ast,
             Decl::VarDecl(VarDecl {
                 name: "a".to_string(),
-                init: Some(Expr::Constant(Constant::Int(3))),
+                init: Some(constant!(3, i32)),
                 storage_class: Some(StorageClass::Static),
                 var_type: Type::Int,
             })
@@ -1555,7 +1566,7 @@ mod tests {
             ast,
             Decl::VarDecl(VarDecl {
                 name: "a".to_string(),
-                init: Some(Expr::Constant(Constant::Int(3))),
+                init: Some(constant!(3, i32)),
                 storage_class: Some(StorageClass::Static),
                 var_type: Type::Int,
             })
@@ -1574,7 +1585,7 @@ mod tests {
             Decl::VarDecl(VarDecl {
                 name: "a".to_string(),
                 init: Some(
-                    Expr::Constant(Constant::Int(3))
+                    constant!(3, i32)
                 ),
                 storage_class: Some(StorageClass::Extern),
                 var_type: Type::Int,
@@ -1594,7 +1605,7 @@ mod tests {
             Decl::VarDecl(VarDecl {
                 name: "a".to_string(),
                 init: Some(
-                    Expr::Constant(Constant::Int(3))
+                    constant!(3, i32)
                 ),
                 storage_class: None,
                 var_type: Type::Long,
@@ -1614,7 +1625,7 @@ mod tests {
             Decl::VarDecl(VarDecl {
                 name: "a".to_string(),
                 init: Some(
-                    Expr::Constant(Constant::Int(3))
+                    constant!(3, i32)
                 ),
                 storage_class: None,
                 var_type: Type::Long,
@@ -1634,7 +1645,7 @@ mod tests {
             Decl::VarDecl(VarDecl {
                 name: "a".to_string(),
                 init: Some(
-                    Expr::Constant(Constant::Int(3))
+                    constant!(3, i32)
                 ),
                 storage_class: None,
                 var_type: Type::Long,
@@ -1654,7 +1665,7 @@ mod tests {
             Decl::VarDecl(VarDecl {
                 name: "a".to_string(),
                 init: Some(
-                    Expr::Constant(Constant::Long(5_000_000_000))
+                    constant!(5_000_000_000, i64)
                 ),
                 storage_class: None,
                 var_type: Type::Long,

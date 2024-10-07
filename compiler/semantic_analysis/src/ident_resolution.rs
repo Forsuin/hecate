@@ -276,36 +276,36 @@ fn resolve_optional_expr(expr: &mut Option<Expr>, ident_map: &IdentMap) -> Seman
 }
 
 fn resolve_expr(expr: &mut Expr, ident_map: &IdentMap) -> SemanticResult<()> {
-    match expr {
-        Expr::Constant(_) => {}
-        Expr::Var(name) => {
+    match &mut expr.kind {
+        ExprKind::Constant(_) => {}
+        ExprKind::Var(name) => {
             if ident_map.contains_key(name) {
                 *name = ident_map.get(&name.clone()).unwrap().unique_name.clone();
             } else {
                 return Err(SemErr::new(format!("Undeclared Variable: {}", name)));
             }
         }
-        Expr::Unary { op, expr } => {
+        ExprKind::Unary { op, expr } => {
             if matches!(op, UnaryOp::Inc | UnaryOp::Dec) {
-                if !matches!(**expr, Expr::Var(_)) {
+                if !matches!(expr.kind, ExprKind::Var(_)) {
                     return Err(SemErr::new(format!("Operand of ++/-- must be variable")));
                 }
             }
             resolve_expr(expr, ident_map)?;
         }
-        Expr::Binary { op: _, left, right } => {
+        ExprKind::Binary { op: _, left, right } => {
             resolve_expr(left, ident_map)?;
             resolve_expr(right, ident_map)?;
         }
-        Expr::Assignment { lvalue, expr } => {
-            if !matches!(**lvalue, Expr::Var(_)) {
+        ExprKind::Assignment { lvalue, expr } => {
+            if !matches!(lvalue.kind, ExprKind::Var(_)) {
                 return Err(SemErr::new(format!("Invalid l-value")));
             }
 
             resolve_expr(lvalue, ident_map)?;
             resolve_expr(expr, ident_map)?;
         }
-        Expr::Conditional {
+        ExprKind::Conditional {
             condition,
             then,
             otherwise,
@@ -314,32 +314,32 @@ fn resolve_expr(expr: &mut Expr, ident_map: &IdentMap) -> SemanticResult<()> {
             resolve_expr(then, ident_map)?;
             resolve_expr(otherwise, ident_map)?;
         }
-        Expr::CompoundAssignment {
+        ExprKind::CompoundAssignment {
             op: _,
             lvalue,
             expr,
         } => {
-            if !matches!(**lvalue, Expr::Var(_)) {
+            if !matches!(lvalue.kind, ExprKind::Var(_)) {
                 return Err(SemErr::new(format!("Invalid l-value")));
             }
 
             resolve_expr(lvalue, ident_map)?;
             resolve_expr(expr, ident_map)?;
         }
-        Expr::PostfixInc(expr) => {
-            if !matches!(**expr, Expr::Var(_)) {
+        ExprKind::PostfixInc(expr) => {
+            if !matches!(expr.kind, ExprKind::Var(_)) {
                 return Err(SemErr::new(format!("Invalid l-value")));
             }
 
             resolve_expr(expr, ident_map)?;
         }
-        Expr::PostfixDec(expr) => {
-            if !matches!(**expr, Expr::Var(_)) {
+        ExprKind::PostfixDec(expr) => {
+            if !matches!(expr.kind, ExprKind::Var(_)) {
                 return Err(SemErr::new(format!("Invalid l-value")));
             }
             resolve_expr(expr, ident_map)?;
         }
-        Expr::FunctionCall { func, args } => {
+        ExprKind::FunctionCall { func, args } => {
             if ident_map.contains_key(func) {
                 *func = ident_map.get(func).unwrap().unique_name.clone();
 
@@ -349,6 +349,9 @@ fn resolve_expr(expr: &mut Expr, ident_map: &IdentMap) -> SemanticResult<()> {
             } else {
                 return Err(SemErr::new(format!("Undeclared function: {}", func)));
             }
+        }
+        ExprKind::Cast { target_type: _, expr } => {
+            resolve_expr(expr, ident_map)?;
         }
     }
 

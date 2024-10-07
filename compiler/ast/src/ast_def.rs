@@ -1,3 +1,4 @@
+use std::fmt::{Display, Formatter};
 use ty::Type;
 
 /// Defines AST datatypes
@@ -117,7 +118,30 @@ pub enum Stmt {
 }
 
 #[derive(Debug, Eq, PartialEq, Clone)]
-pub enum Expr {
+pub struct Expr {
+    pub kind: ExprKind,
+    pub ty: Option<Type>,
+}
+
+impl Expr {
+    pub fn new(kind: ExprKind) -> Self {
+        Self {
+            kind,
+            ty: None,
+        }
+    }
+
+    pub fn set_type(&mut self, ty: Type) {
+        self.ty = Some(ty);
+    }
+
+    pub fn get_type(&self) -> Option<Type> {
+        self.ty.clone()
+    }
+}
+
+#[derive(Debug, Eq, PartialEq, Clone)]
+pub enum ExprKind {
     Constant(Constant),
     Var(String),
     Unary {
@@ -155,10 +179,23 @@ pub enum Expr {
     },
 }
 
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, Eq, PartialEq, Clone, Hash)]
 pub enum Constant {
     Int(i32),
     Long(i64),
+}
+
+impl Display for Constant {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Constant::Int(val) => {
+                write!(f, "{}", val)
+            }
+            Constant::Long(val) => {
+                write!(f, "{}", val)
+            }
+        }
+    }
 }
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
