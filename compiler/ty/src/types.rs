@@ -37,3 +37,13 @@ pub struct Symbol {
     pub t: Type,
     pub attrs: IdentifierAttr,
 }
+
+
+pub fn get_common_type(first: Type, second: Type) -> Type {
+    if first == second {
+        first
+    }
+    else {
+        Type::Long
+    }
+}
