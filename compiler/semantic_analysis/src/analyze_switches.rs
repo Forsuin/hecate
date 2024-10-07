@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use ast::*;
+use ty::Constant;
 use unique_ident::make_label;
 
 use crate::sem_err::*;

@@ -1,5 +1,5 @@
-use std::fmt::{Display, Formatter};
-use ty::Type;
+use std::fmt::Display;
+use ty::{Constant, Type};
 
 /// Defines AST datatypes
 
@@ -177,25 +177,6 @@ pub enum ExprKind {
         target_type: Type,
         expr: Box<Expr>,
     },
-}
-
-#[derive(Debug, Eq, PartialEq, Clone, Hash)]
-pub enum Constant {
-    Int(i32),
-    Long(i64),
-}
-
-impl Display for Constant {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Constant::Int(val) => {
-                write!(f, "{}", val)
-            }
-            Constant::Long(val) => {
-                write!(f, "{}", val)
-            }
-        }
-    }
 }
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]

@@ -1,3 +1,5 @@
+use std::fmt::{Display, Formatter};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
     Int,
@@ -11,10 +13,10 @@ pub struct FuncType {
     pub return_type: Box<Type>,
 }
 
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum InitialVal {
     Tentative,
-    Initial(i32),
+    Initial(Constant),
     NoInit,
 }
 
@@ -36,6 +38,25 @@ pub enum IdentifierAttr {
 pub struct Symbol {
     pub t: Type,
     pub attrs: IdentifierAttr,
+}
+
+#[derive(Debug, Eq, PartialEq, Clone, Hash)]
+pub enum Constant {
+    Int(i32),
+    Long(i64),
+}
+
+impl Display for Constant {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Constant::Int(val) => {
+                write!(f, "{}", val)
+            }
+            Constant::Long(val) => {
+                write!(f, "{}", val)
+            }
+        }
+    }
 }
 
 

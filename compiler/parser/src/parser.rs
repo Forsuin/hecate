@@ -6,7 +6,7 @@ use thiserror::Error;
 use ast::ExprKind::{Assignment, CompoundAssignment, Conditional};
 use ast::*;
 use lexer::*;
-use ty::Type;
+use ty::{Constant, Type};
 
 #[derive(Error, Clone, Debug)]
 pub struct ParseError {
