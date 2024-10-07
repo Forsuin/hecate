@@ -112,6 +112,6 @@ impl SymbolTable {
             }
         }
 
-        Err(format!("Internal Error: '{}' sybol does not exist", name))
+        Err(format!("Internal Error: '{}' symbol does not exist", name))
     }
 }
