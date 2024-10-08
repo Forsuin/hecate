@@ -1,4 +1,5 @@
 use ast::*;
+use std::iter::zip;
 use ty::*;
 
 use crate::sem_err::*;
@@ -15,8 +16,8 @@ impl TypeChecker {
         }
     }
 
-    pub fn check(&mut self, program: &TranslationUnit) -> SemanticResult<()> {
-        for decl in &program.decls {
+    pub fn check(&mut self, program: &mut TranslationUnit) -> SemanticResult<()> {
+        for decl in &mut program.decls {
             match decl {
                 Decl::FuncDecl(func) => self.check_func_decl(func)?,
                 Decl::VarDecl(var) => self.check_file_scope_var_decl(var)?,
@@ -27,8 +28,11 @@ impl TypeChecker {
     }
 
     fn check_file_scope_var_decl(&mut self, var: &VarDecl) -> SemanticResult<()> {
-        let current_init = match var.init {
-            Some(Expr::Constant(c)) => InitialVal::Initial(c),
+        let current_init = match &var.init {
+            Some(Expr {
+                kind: ExprKind::Constant(c),
+                ..
+            }) => InitialVal::Initial(c.clone()),
             None => {
                 if var.storage_class == Some(StorageClass::Extern) {
                     InitialVal::NoInit
@@ -49,7 +53,7 @@ impl TypeChecker {
         let old_decl = self.symbols.get(&var.name);
 
         let (global, init) = match old_decl {
-            None => (current_global, current_init),
+            None => (current_global, current_init.clone()),
             Some(decl) => {
                 if decl.t != Type::Int {
                     Err(SemErr::new(format!(
@@ -58,17 +62,23 @@ impl TypeChecker {
                     )))?;
                 }
 
-                match decl.attrs {
+                match &decl.attrs {
                     IdentifierAttr::Static { init: prev_init, global: prev_global } => {
-                        let global = if var.storage_class == Some(StorageClass::Extern) { prev_global } else if current_global == prev_global { current_global } else { return Err(SemErr::new(format!("Conflicting variable linkage for: '{}'", var.name))); };
+                        let global = if var.storage_class == Some(StorageClass::Extern) {
+                            *prev_global
+                        } else if current_global == *prev_global {
+                            current_global
+                        } else {
+                            return Err(SemErr::new(format!("Conflicting variable linkage for: '{}'", var.name)));
+                        };
 
-                        let init = match (prev_init, current_init) {
+                        let init = match (prev_init, current_init.clone()) {
                             (InitialVal::Initial(_), InitialVal::Initial(_)) => {
                                 return Err(SemErr::new(format!("Conflicting global variable definition: {}", var.name)));
                             },
-                            (InitialVal::Initial(_), _) => prev_init,
+                            (InitialVal::Initial(_), _) => prev_init.clone(),
                             (InitialVal::Tentative, InitialVal::Tentative | InitialVal::NoInit) => InitialVal::Tentative,
-                            (_, InitialVal::Initial(_)) | (InitialVal::NoInit, _) => current_init
+                            (_, InitialVal::Initial(_)) | (InitialVal::NoInit, _) => current_init.clone()
                         };
 
                         (global, init)
@@ -84,10 +94,9 @@ impl TypeChecker {
         Ok(())
     }
 
-    fn check_func_decl(&mut self, decl: &FuncDecl) -> SemanticResult<()> {
-        let fun_type = FuncType {
-            param_count: decl.params.len(),
-        };
+    fn check_func_decl(&mut self, decl: &mut FuncDecl) -> SemanticResult<()> {
+        let func_type = decl.func_type.clone();
+
         let has_body = decl.body.is_some();
         let defined;
         let mut global = decl.storage_class != Some(StorageClass::Static);
@@ -95,7 +104,7 @@ impl TypeChecker {
         if self.symbols.is_defined(&decl.ident) {
             let old_decl = self.symbols.get(&decl.ident).unwrap();
 
-            if old_decl.t != Type::Func(fun_type.clone()) {
+            if old_decl.t != func_type {
                 return Err(SemErr::new(format!(
                     "Redeclared '{}, Type: {:?}' with a different type: '{}'",
                     decl.ident,
@@ -137,9 +146,9 @@ impl TypeChecker {
         }
 
         self.symbols
-            .add_func(decl.ident.clone(), Type::Func(fun_type), global, defined);
+            .add_func(decl.ident.clone(), func_type, global, defined);
 
-        if let Some(body) = &decl.body {
+        if let Some(body) = &mut decl.body {
             for param in decl.params.clone() {
                 self.symbols.add_automatic_var(param, Type::Int);
             }
@@ -150,15 +159,15 @@ impl TypeChecker {
         Ok(())
     }
 
-    fn check_block(&mut self, block: &Block) -> SemanticResult<()> {
-        for item in &block.items {
+    fn check_block(&mut self, block: &mut Block) -> SemanticResult<()> {
+        for item in &mut block.items {
             self.check_block_item(item)?
         }
 
         Ok(())
     }
 
-    fn check_block_item(&mut self, item: &BlockItem) -> SemanticResult<()> {
+    fn check_block_item(&mut self, item: &mut BlockItem) -> SemanticResult<()> {
         match item {
             BlockItem::S(stmt) => {
                 self.check_stmt(stmt)?;
@@ -171,7 +180,7 @@ impl TypeChecker {
         Ok(())
     }
 
-    fn check_local_decl(&mut self, decl: &Decl) -> SemanticResult<()> {
+    fn check_local_decl(&mut self, decl: &mut Decl) -> SemanticResult<()> {
         match decl {
             Decl::FuncDecl(func) => {
                 self.check_func_decl(func)?;
@@ -184,7 +193,7 @@ impl TypeChecker {
         Ok(())
     }
 
-    fn check_local_var_decl(&mut self, var: &VarDecl) -> SemanticResult<()> {
+    fn check_local_var_decl(&mut self, var: &mut VarDecl) -> SemanticResult<()> {
         match var.storage_class {
             Some(StorageClass::Extern) => {
                 if var.init.is_some() {
@@ -214,9 +223,12 @@ impl TypeChecker {
                 }
             }
             Some(StorageClass::Static) => {
-                let init_val = match var.init {
-                    Some(Expr::Constant(i)) => InitialVal::Initial(i),
-                    None => InitialVal::Initial(0),
+                let init_val = match &var.init {
+                    Some(Expr {
+                        kind: ExprKind::Constant(i),
+                        ..
+                    }) => InitialVal::Initial(i.clone()),
+                    None => InitialVal::Initial(Constant::Int(0)),
                     Some(_) => {
                         return Err(SemErr::new(format!(
                             "Non-constant initializer on local static variable: '{}'",
@@ -230,7 +242,7 @@ impl TypeChecker {
             }
             None => {
                 self.symbols.add_automatic_var(var.name.clone(), Type::Int);
-                match &var.init {
+                match &mut var.init {
                     Some(init) => self.check_expr(init)?,
                     None => {}
                 }
@@ -240,7 +252,7 @@ impl TypeChecker {
         Ok(())
     }
 
-    fn check_stmt(&mut self, stmt: &Stmt) -> SemanticResult<()> {
+    fn check_stmt(&mut self, stmt: &mut Stmt) -> SemanticResult<()> {
         match stmt {
             Stmt::Compound { block } => {
                 self.check_block(block)?;
@@ -331,13 +343,15 @@ impl TypeChecker {
         Ok(())
     }
 
-    fn check_expr(&mut self, expr: &Expr) -> SemanticResult<()> {
-        match expr {
-            Expr::Var(var) => {
-                let var_type = &self.symbols.get(var).unwrap().t;
+    fn check_expr(&mut self, expr: &mut Expr) -> SemanticResult<()> {
+        match &mut expr.kind {
+            ExprKind::Var(var) => {
+                let var_type = &self.symbols.get(&var).unwrap().t;
 
                 match var_type {
-                    Type::Int => {}
+                    ty @ Type::Int | ty @ Type::Long => {
+                        expr.set_type(ty.clone());
+                    }
                     Type::Func(_) => {
                         return Err(SemErr::new(format!(
                             "Tried to use function '{}' as a variable",
@@ -346,18 +360,72 @@ impl TypeChecker {
                     }
                 }
             }
-            Expr::Unary { op: _, expr } => {
-                self.check_expr(expr)?;
+            ExprKind::Unary {
+                op,
+                expr: ref mut body,
+            } => {
+                self.check_expr(body)?;
+                match op {
+                    UnaryOp::Not => expr.set_type(Type::Int),
+                    _ => expr.set_type(expr.get_type().unwrap()),
+                }
             }
-            Expr::Binary { op: _, left, right } => {
+            ExprKind::Binary { op, left, right } => {
                 self.check_expr(left)?;
                 self.check_expr(right)?;
+
+                match op {
+                    BinaryOp::BitshiftLeft | BinaryOp::BitshiftRight => {
+                        // result has type of left operand
+                        let left_type = left.get_type().unwrap();
+
+                        expr.set_type(left_type);
+                    }
+                    BinaryOp::And | BinaryOp::Or => {
+                        // result always has value 0 or 1, int
+                        expr.set_type(Type::Int);
+                    }
+                    _ => {
+                        let left_type = left.get_type().unwrap();
+                        let right_type = right.get_type().unwrap();
+                        let common_type = get_common_type(left_type, right_type);
+
+                        let left_cast = convert_to(&left, common_type.clone());
+                        let right_cast = convert_to(&right, common_type.clone());
+
+                        **left = left_cast;
+                        **right = right_cast;
+
+                        match op {
+                            BinaryOp::Add
+                            | BinaryOp::Subtract
+                            | BinaryOp::Multiply
+                            | BinaryOp::Divide
+                            | BinaryOp::Modulo
+                            | BinaryOp::BitwiseAnd
+                            | BinaryOp::BitwiseOr
+                            | BinaryOp::BitwiseXor => {
+                                expr.set_type(common_type);
+                            }
+                            _ => {
+                                expr.set_type(Type::Int);
+                            }
+                        }
+                    }
+                }
             }
-            Expr::Assignment { lvalue, expr } => {
+            ExprKind::Assignment { lvalue, expr: body } => {
                 self.check_expr(lvalue)?;
-                self.check_expr(expr)?;
+                self.check_expr(body)?;
+
+                let left_type = lvalue.get_type().unwrap();
+
+                let right_cast = convert_to(&body, left_type.clone());
+
+                **body = right_cast;
+                expr.set_type(left_type);
             }
-            Expr::Conditional {
+            ExprKind::Conditional {
                 condition,
                 then,
                 otherwise,
@@ -365,45 +433,110 @@ impl TypeChecker {
                 self.check_expr(condition)?;
                 self.check_expr(then)?;
                 self.check_expr(otherwise)?;
+
+                let common_type =
+                    get_common_type(then.get_type().unwrap(), otherwise.get_type().unwrap());
+
+                let then_cast = convert_to(&then, common_type.clone());
+                let otherwise_cast = convert_to(&otherwise, common_type.clone());
+
+                **then = then_cast;
+                **otherwise = otherwise_cast;
+
+                expr.set_type(common_type);
             }
-            Expr::CompoundAssignment {
-                op: _,
+            ExprKind::CompoundAssignment {
+                op,
                 lvalue,
-                expr,
+                expr: body,
             } => {
                 self.check_expr(lvalue)?;
-                self.check_expr(expr)?;
+                self.check_expr(body)?;
+
+                let left_type = lvalue.get_type().unwrap();
+                let right_type = body.get_type().unwrap();
+
+                let result_type = match op {
+                    BinaryOp::BitshiftLeft | BinaryOp::BitshiftRight => left_type,
+                    _ => {
+                        let common_type = get_common_type(left_type, right_type);
+                        let right_cast = convert_to(&body, common_type.clone());
+                        **body = right_cast;
+
+                        common_type
+                    }
+                };
+
+                expr.set_type(result_type);
             }
-            Expr::PostfixInc(expr) => {
-                self.check_expr(expr)?;
+            ExprKind::PostfixInc(body) => {
+                self.check_expr(body)?;
+
+                let body_type = body.get_type().unwrap();
+
+                expr.set_type(body_type);
             }
-            Expr::PostfixDec(expr) => {
-                self.check_expr(expr)?;
+            ExprKind::PostfixDec(body) => {
+                self.check_expr(body)?;
+
+                let body_type = body.get_type().unwrap();
+
+                expr.set_type(body_type);
             }
-            Expr::FunctionCall { func, args } => {
-                let func_type = &self.symbols.get(func).unwrap().t;
+            ExprKind::FunctionCall { func, args } => {
+                let func_type = self.symbols.get(func).unwrap().t.clone();
 
                 match func_type {
-                    Type::Int => {
+                    Type::Int | Type::Long => {
                         return Err(SemErr::new(format!(
                             "Tried to use variable '{}' as function",
                             func
-                        )));
+                        )))
                     }
-                    Type::Func(ft) => {
-                        if args.len() != ft.param_count {
-                            return Err(SemErr::new(format!("Tried to call {} with incorrect number of arguments, expected {}, found {}", func, args.len(), ft.param_count)));
-                        } else {
-                            for arg in args {
-                                self.check_expr(arg)?;
-                            }
+                    Type::Func(func_type) => {
+                        if func_type.param_types.len() != args.len() {
+                            return Err(SemErr::new(format!(
+                                "Function '{}' called with wrong number of arguments, expected '{}' found '{}'",
+                                 func, func_type.param_types.len(), args.len())));
                         }
+
+                        let mut converted_args = vec![];
+
+                        for (arg, param_type) in zip(&mut *args, func_type.param_types) {
+                            self.check_expr(arg)?;
+
+                            converted_args.push(convert_to(&arg, param_type));
+                        }
+
+                        *args = converted_args;
                     }
                 }
             }
-            Expr::Constant(_) => {}
+            ExprKind::Constant(c) => match c {
+                Constant::Int(_) => {
+                    expr.set_type(Type::Int);
+                }
+                Constant::Long(_) => {
+                    expr.set_type(Type::Long);
+                }
+            },
+            ExprKind::Cast { target_type, expr } => {
+                self.check_expr(expr)?;
+                expr.set_type(target_type.clone());
+            }
         }
 
         Ok(())
     }
+}
+
+fn convert_to(expr: &Expr, target_type: Type) -> Expr {
+    let mut cast = Expr::new(ExprKind::Cast {
+        target_type: target_type.clone(),
+        expr: Box::from(expr.clone()),
+    });
+
+    cast.set_type(target_type);
+
+    cast
 }
