@@ -181,9 +181,11 @@ fn compile(path: &str, stop_stage: &Option<StopStage>, assm_path: &str, debug: b
 
     let mut lexer = Lexer::new(&source);
 
-    let (tokens, errors): (Vec<_>, Vec<_>) = lexer
-        .tokenize()
-        .partition(|t| t.kind != TokenType::Unknown && t.kind != TokenType::InvalidIdent && t.kind != TokenType::Error);
+    let (tokens, errors): (Vec<_>, Vec<_>) = lexer.tokenize().partition(|t| {
+        t.kind != TokenType::Unknown
+            && t.kind != TokenType::InvalidIdent
+            && t.kind != TokenType::Error
+    });
 
     if !errors.is_empty() {
         let mut error_msgs = Vec::new();

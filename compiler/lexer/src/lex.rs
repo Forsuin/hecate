@@ -14,7 +14,6 @@ pub enum LexError {
     InvalidSuffix(String),
     #[error("number out of range")]
     OutOfRange(String),
-
 }
 
 #[derive(Debug, Clone)]
@@ -377,7 +376,9 @@ impl<'a> Lexer<'a> {
     fn convert_constant_value(&mut self, source: &str) -> Result<TokenValue, LexError> {
         let suffix = source.trim_start_matches(|c| char::is_numeric(c));
         // get just prefix, if no suffix to strip, just use source
-        let prefix = source.strip_suffix(|c| char::is_alphabetic(c)).unwrap_or(source);
+        let prefix = source
+            .strip_suffix(|c| char::is_alphabetic(c))
+            .unwrap_or(source);
 
         // check if constant ends with suffix
         let const_type = match suffix {
@@ -385,21 +386,17 @@ impl<'a> Lexer<'a> {
             suffix => self.check_valid_suffix(suffix)?,
         };
 
-
-
         Ok(match const_type {
             ConstType::Int => {
                 // try to parse as an int, but automatically convert to long if too big
                 match prefix.parse::<i32>() {
                     Ok(val) => TokenValue::Integer(val),
                     Err(_) => match prefix.parse::<i64>() {
-                        Ok(val) => {
-                            TokenValue::Long(val)
-                        }
+                        Ok(val) => TokenValue::Long(val),
                         Err(_) => {
                             return Err(LexError::OutOfRange(source.to_string()));
                         }
-                    }
+                    },
                 }
             }
             ConstType::Long => TokenValue::Long(prefix.parse::<i64>().unwrap()),
@@ -427,7 +424,7 @@ impl<'a> Lexer<'a> {
                     self.advance();
                 }
                 // other identifier characters are not ok
-                c if c.is_alphabetic()  => return TokenType::Error,
+                c if c.is_alphabetic() => return TokenType::Error,
                 '_' => return TokenType::Error,
 
                 // everything else is ok

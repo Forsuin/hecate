@@ -350,7 +350,10 @@ fn resolve_expr(expr: &mut Expr, ident_map: &IdentMap) -> SemanticResult<()> {
                 return Err(SemErr::new(format!("Undeclared function: {}", func)));
             }
         }
-        ExprKind::Cast { target_type: _, expr } => {
+        ExprKind::Cast {
+            target_type: _,
+            expr,
+        } => {
             resolve_expr(expr, ident_map)?;
         }
     }

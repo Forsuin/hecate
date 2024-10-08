@@ -1,4 +1,3 @@
-use std::fmt::Display;
 use ty::{Constant, Type};
 
 /// Defines AST datatypes
@@ -120,15 +119,12 @@ pub enum Stmt {
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct Expr {
     pub kind: ExprKind,
-    pub ty: Option<Type>,
+    ty: Option<Type>,
 }
 
 impl Expr {
     pub fn new(kind: ExprKind) -> Self {
-        Self {
-            kind,
-            ty: None,
-        }
+        Self { kind, ty: None }
     }
 
     pub fn set_type(&mut self, ty: Type) {

@@ -101,7 +101,8 @@ impl Parser {
     fn parse_var_decl(&mut self) -> Result<VarDecl, ParseError> {
         match self.parse_decl()? {
             Decl::FuncDecl(FuncDecl { ident, .. }) => Err(ParseError::new(format!(
-                "Expected variable declaration but found function declaration: '{}'", ident
+                "Expected variable declaration but found function declaration: '{}'",
+                ident
             ))),
             Decl::VarDecl(var) => Ok(var),
         }
@@ -118,12 +119,16 @@ impl Parser {
             Some(Token {
                 kind: TokenType::OpenParen,
                 ..
-            }) => Ok(Decl::FuncDecl(
-                self.parse_rest_func_decl(ident, storage_class, t)?,
-            )),
-            Some(_) => Ok(Decl::VarDecl(
-                self.parse_rest_var_decl(ident, storage_class, t)?,
-            )),
+            }) => Ok(Decl::FuncDecl(self.parse_rest_func_decl(
+                ident,
+                storage_class,
+                t,
+            )?)),
+            Some(_) => Ok(Decl::VarDecl(self.parse_rest_var_decl(
+                ident,
+                storage_class,
+                t,
+            )?)),
         }
     }
 
@@ -213,7 +218,7 @@ impl Parser {
         &mut self,
         name: String,
         storage_class: Option<StorageClass>,
-        func_type: Type
+        func_type: Type,
     ) -> Result<FuncDecl, ParseError> {
         self.expect(TokenType::OpenParen)?;
 
@@ -297,7 +302,7 @@ impl Parser {
         &mut self,
         name: String,
         storage_class: Option<StorageClass>,
-        var_type: Type
+        var_type: Type,
     ) -> Result<VarDecl, ParseError> {
         let init;
 
@@ -369,7 +374,6 @@ impl Parser {
                 let expr = self.parse_expr(0)?;
 
                 self.expect(TokenType::Semicolon)?;
-
 
                 Ok(Stmt::Return { expr })
             }
@@ -808,26 +812,25 @@ impl Parser {
         let token = self.tokens.next();
 
         match token {
-            None => Err(ParseError::new("Unexpected end of file, expected constant".to_string())),
-            Some(token) => {
-                match token {
-                    Token {
-                             kind: TokenType::Constant,
-                             value: TokenValue::Integer(value),
-                             ..
-                         } => {
-                        Ok(Constant::Int(value))
-                    },
-                    Token {
-                             kind: TokenType::Constant,
-                             value: TokenValue::Long(value),
-                             ..
-                         } => {
-                        Ok(Constant::Long(value))
-                    },
-                    _ => Err(ParseError::new(format!("Expected constant, found '{:?} at ({}, {})'", token.kind, token.line, token.col)))
-                }
-            }
+            None => Err(ParseError::new(
+                "Unexpected end of file, expected constant".to_string(),
+            )),
+            Some(token) => match token {
+                Token {
+                    kind: TokenType::Constant,
+                    value: TokenValue::Integer(value),
+                    ..
+                } => Ok(Constant::Int(value)),
+                Token {
+                    kind: TokenType::Constant,
+                    value: TokenValue::Long(value),
+                    ..
+                } => Ok(Constant::Long(value)),
+                _ => Err(ParseError::new(format!(
+                    "Expected constant, found '{:?} at ({}, {})'",
+                    token.kind, token.line, token.col
+                ))),
+            },
         }
     }
 
@@ -1094,8 +1097,8 @@ fn get_compound(token_type: TokenType) -> Option<BinaryOp> {
 #[cfg(test)]
 mod tests {
     use ast::ExprKind::*;
-    use ast::Constant;
     use lexer::*;
+    use ty::Constant;
 
     use super::*;
 
@@ -1119,12 +1122,16 @@ mod tests {
     macro_rules! const_expr {
         ($expr:expr) => {
             constant!($expr, i32)
-        }
+        };
     }
 
     macro_rules! constant {
-        ($expr:expr, i32) => { Expr::new(ExprKind::Constant(Constant::Int($expr))) };
-        ($expr:expr, i64) => { Expr::new(ExprKind::Constant(Constant::Long($expr))) };
+        ($expr:expr, i32) => {
+            Expr::new(ExprKind::Constant(Constant::Int($expr)))
+        };
+        ($expr:expr, i64) => {
+            Expr::new(ExprKind::Constant(Constant::Long($expr)))
+        };
     }
 
     macro_rules! break_stmt {
@@ -1291,7 +1298,11 @@ mod tests {
 
         assert_eq!(
             ast,
-            binary!(BinaryOp::Add, binary!(BinaryOp::Add, constant!(3, i32), constant!(5, i32)), constant!(6, i32))
+            binary!(
+                BinaryOp::Add,
+                binary!(BinaryOp::Add, constant!(3, i32), constant!(5, i32)),
+                constant!(6, i32)
+            )
         )
     }
 
@@ -1302,10 +1313,10 @@ mod tests {
 
         let ast = Parser::new(tokens).parse_expr(0).unwrap();
 
-
         assert_eq!(
             ast,
-            binary!(BinaryOp::Add,
+            binary!(
+                BinaryOp::Add,
                 binary!(BinaryOp::Add, constant!(3, i32), constant!(5, i32)),
                 binary!(BinaryOp::Multiply, constant!(6, i32), constant!(2, i32))
             )
@@ -1319,11 +1330,10 @@ mod tests {
 
         let ast = Parser::new(tokens).parse_expr(0).unwrap();
 
-
-
         assert_eq!(
             ast,
-        binary!(BinaryOp::Add,
+            binary!(
+                BinaryOp::Add,
                 binary!(BinaryOp::Add, constant!(3, i32), constant!(5, i32)),
                 unary!(UnaryOp::Negate, constant!(6, i32))
             )
@@ -1419,7 +1429,8 @@ mod tests {
 
         assert_eq!(
             ast,
-            assignment!(var!("a"),
+            assignment!(
+                var!("a"),
                 conditional!(constant!(1, i32), constant!(2, i32), constant!(3, i32))
             )
         )
@@ -1434,8 +1445,11 @@ mod tests {
 
         assert_eq!(
             ast,
-            assignment!(var!("a"),
-                conditional!(constant!(1, i32), constant!(2, i32),
+            assignment!(
+                var!("a"),
+                conditional!(
+                    constant!(1, i32),
+                    constant!(2, i32),
                     binary!(BinaryOp::Or, constant!(3, i32), constant!(4, i32))
                 )
             )
@@ -1506,10 +1520,7 @@ mod tests {
 
         let ast = Parser::new(tokens).parse_expr(0).unwrap();
 
-        assert_eq!(
-            ast,
-            postfix_inc!(var!("x"))
-        )
+        assert_eq!(ast, postfix_inc!(var!("x")))
     }
 
     #[test]
@@ -1584,9 +1595,7 @@ mod tests {
             ast,
             Decl::VarDecl(VarDecl {
                 name: "a".to_string(),
-                init: Some(
-                    constant!(3, i32)
-                ),
+                init: Some(constant!(3, i32)),
                 storage_class: Some(StorageClass::Extern),
                 var_type: Type::Int,
             })
@@ -1604,9 +1613,7 @@ mod tests {
             ast,
             Decl::VarDecl(VarDecl {
                 name: "a".to_string(),
-                init: Some(
-                    constant!(3, i32)
-                ),
+                init: Some(constant!(3, i32)),
                 storage_class: None,
                 var_type: Type::Long,
             })
@@ -1624,9 +1631,7 @@ mod tests {
             ast,
             Decl::VarDecl(VarDecl {
                 name: "a".to_string(),
-                init: Some(
-                    constant!(3, i32)
-                ),
+                init: Some(constant!(3, i32)),
                 storage_class: None,
                 var_type: Type::Long,
             })
@@ -1644,9 +1649,7 @@ mod tests {
             ast,
             Decl::VarDecl(VarDecl {
                 name: "a".to_string(),
-                init: Some(
-                    constant!(3, i32)
-                ),
+                init: Some(constant!(3, i32)),
                 storage_class: None,
                 var_type: Type::Long,
             })
@@ -1664,9 +1667,7 @@ mod tests {
             ast,
             Decl::VarDecl(VarDecl {
                 name: "a".to_string(),
-                init: Some(
-                    constant!(5_000_000_000, i64)
-                ),
+                init: Some(constant!(5_000_000_000, i64)),
                 storage_class: None,
                 var_type: Type::Long,
             })

@@ -59,12 +59,10 @@ impl Display for Constant {
     }
 }
 
-
 pub fn get_common_type(first: Type, second: Type) -> Type {
     if first == second {
         first
-    }
-    else {
+    } else {
         Type::Long
     }
 }
