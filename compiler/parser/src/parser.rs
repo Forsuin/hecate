@@ -6,7 +6,7 @@ use thiserror::Error;
 use ast::ExprKind::{Assignment, CompoundAssignment, Conditional};
 use ast::*;
 use lexer::*;
-use ty::{Constant, Type};
+use ty::{Constant, FuncType, Type};
 
 #[derive(Error, Clone, Debug)]
 pub struct ParseError {
@@ -167,7 +167,7 @@ impl Parser {
             )));
         }
 
-        let ty = self.parse_type(types)?;
+        let ty = self.parse_type(types.iter().map(|t| t.kind).collect())?;
         let mut storage_class = None;
 
         if !storage_classes.is_empty() {
@@ -188,13 +188,8 @@ impl Parser {
         }
     }
 
-    fn parse_type(&self, types: Vec<Token>) -> Result<Type, ParseError> {
-        match types
-            .iter()
-            .map(|t| t.kind)
-            .collect::<Vec<TokenType>>()
-            .as_slice()
-        {
+    fn parse_type(&self, types: Vec<TokenType>) -> Result<Type, ParseError> {
+        match types.as_slice() {
             [TokenType::Int] => Ok(Type::Int),
             [TokenType::Long]
             | [TokenType::Int, TokenType::Long]
@@ -214,6 +209,61 @@ impl Parser {
         }
     }
 
+    fn parse_type_specifier(&mut self) -> Result<TokenType, ParseError> {
+        let spec = self
+            .tokens
+            .next()
+            .ok_or(ParseError::new("Unexpected EOF".to_string()))?;
+
+        if is_type_specifier(spec.kind) {
+            Ok(spec.kind)
+        } else {
+            Err(ParseError::new(format!(
+                "Expected type specifier, found '{:?}'",
+                spec
+            )))
+        }
+    }
+
+    fn parse_type_specifier_list(&mut self) -> Result<Vec<TokenType>, ParseError> {
+        let mut specs = vec![];
+
+        specs.push(self.parse_type_specifier()?);
+
+        while let Some(token) = self.peek() {
+            if is_type_specifier(token.kind) {
+                specs.push(token.kind);
+            } else {
+                break;
+            }
+        }
+
+        Ok(specs)
+    }
+
+    fn parse_param_list(&mut self) -> Result<Vec<(Type, String)>, ParseError> {
+        if self.peek().unwrap().kind == TokenType::Void {
+            Ok(vec![])
+        } else {
+            let mut params = vec![];
+
+            loop {
+                let type_spec_list = self.parse_type_specifier_list()?;
+                let next_param_type = self.parse_type(type_spec_list)?;
+                let next_param_name = self.parse_ident()?;
+                params.push((next_param_type, next_param_name));
+
+                if self.peek().unwrap().kind == TokenType::Comma {
+                    self.expect(TokenType::Comma)?;
+                } else {
+                    break;
+                }
+            }
+
+            Ok(params)
+        }
+    }
+
     fn parse_rest_func_decl(
         &mut self,
         name: String,
@@ -222,59 +272,12 @@ impl Parser {
     ) -> Result<FuncDecl, ParseError> {
         self.expect(TokenType::OpenParen)?;
 
-        let mut param_list = vec![];
-
-        loop {
-            match self.peek() {
-                None => {
-                    return Err(ParseError::new(
-                        "Expected ')', but found end of file instead".to_string(),
-                    ))
-                }
-                Some(Token {
-                    kind: TokenType::Comma,
-                    ..
-                }) => {
-                    self.expect(TokenType::Comma)?;
-
-                    if self
-                        .peek()
-                        .is_some_and(|token| token.kind == TokenType::CloseParen)
-                    {
-                        return Err(ParseError::new(
-                            "Found trailing comma at end of parameter list".to_string(),
-                        ));
-                    }
-                }
-                Some(Token {
-                    kind: TokenType::Int,
-                    ..
-                }) => {
-                    self.expect(TokenType::Int)?;
-
-                    param_list.push(self.parse_ident()?);
-                }
-                Some(Token {
-                    kind: TokenType::Void,
-                    ..
-                }) => {
-                    self.expect(TokenType::Void)?;
-                }
-                Some(Token {
-                    kind: TokenType::CloseParen,
-                    ..
-                }) => {
-                    self.expect(TokenType::CloseParen)?;
-                    break;
-                }
-                _ => {
-                    return Err(ParseError::new(format!(
-                        "Expected function paramaters, but found {:?}",
-                        self.peek()
-                    )))
-                }
-            }
-        }
+        let params_with_types = self.parse_param_list()?;
+        let (param_types, param_names) = params_with_types.into_iter().unzip();
+        let func_type = Type::Func(FuncType {
+            param_types,
+            return_type: Box::from(func_type.clone()),
+        });
 
         let mut body = None;
 
@@ -291,7 +294,7 @@ impl Parser {
 
         Ok(FuncDecl {
             ident: name,
-            params: param_list,
+            params: param_names,
             body,
             storage_class,
             func_type,
@@ -1094,6 +1097,13 @@ fn get_compound(token_type: TokenType) -> Option<BinaryOp> {
     }
 }
 
+fn is_type_specifier(kind: TokenType) -> bool {
+    match kind {
+        TokenType::Int | TokenType::Long => true,
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use ast::ExprKind::*;
@@ -1670,6 +1680,50 @@ mod tests {
                 init: Some(constant!(5_000_000_000, i64)),
                 storage_class: None,
                 var_type: Type::Long,
+            })
+        )
+    }
+
+    #[test]
+    fn static_int_with_long_init() {
+        let src = "static int a = 100L;";
+        let tokens = Lexer::new(src).tokenize().collect();
+
+        let ast = Parser::new(tokens).parse_decl().unwrap();
+
+        println!("{:#?}", ast);
+
+        assert_eq!(
+            ast,
+            Decl::VarDecl(VarDecl {
+                name: "a".to_string(),
+                init: Some(constant!(100, i64)),
+                storage_class: Some(StorageClass::Static),
+                var_type: Type::Int,
+            })
+        )
+    }
+
+    #[test]
+    fn function_param_long() {
+        let src = "int my_function(long a, long int b, int long c);";
+        let tokens = Lexer::new(src).tokenize().collect();
+
+        let ast = Parser::new(tokens).parse_decl().unwrap();
+
+        println!("{:#?}", ast);
+
+        assert_eq!(
+            ast,
+            Decl::FuncDecl(FuncDecl {
+                ident: "my_function".to_string(),
+                params: vec!["a", "b", "c"].iter().map(|x| x.to_string()).collect(),
+                body: None,
+                storage_class: None,
+                func_type: Type::Func(ty::FuncType {
+                    param_types: vec![Type::Long, Type::Long, Type::Long],
+                    return_type: Box::new(Type::Int)
+                })
             })
         )
     }
