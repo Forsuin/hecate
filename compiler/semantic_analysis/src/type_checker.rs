@@ -146,31 +146,41 @@ impl TypeChecker {
         }
 
         self.symbols
-            .add_func(decl.ident.clone(), func_type, global, defined);
+            .add_func(decl.ident.clone(), func_type.clone(), global, defined);
 
         if let Some(body) = &mut decl.body {
             for param in decl.params.clone() {
                 self.symbols.add_automatic_var(param, Type::Int);
             }
 
-            self.check_block(body)?;
+            let return_type = match func_type {
+                Type::Int | Type::Long => {
+                    return Err(SemErr::new(format!(
+                        "Internal Error: function '{}' has non-function type",
+                        decl.ident
+                    )));
+                }
+                Type::Func(func_type) => func_type.return_type,
+            };
+
+            self.check_block(body, *return_type)?;
         }
 
         Ok(())
     }
 
-    fn check_block(&mut self, block: &mut Block) -> SemanticResult<()> {
+    fn check_block(&mut self, block: &mut Block, return_type: Type) -> SemanticResult<()> {
         for item in &mut block.items {
-            self.check_block_item(item)?
+            self.check_block_item(item, return_type.clone())?
         }
 
         Ok(())
     }
 
-    fn check_block_item(&mut self, item: &mut BlockItem) -> SemanticResult<()> {
+    fn check_block_item(&mut self, item: &mut BlockItem, return_type: Type) -> SemanticResult<()> {
         match item {
             BlockItem::S(stmt) => {
-                self.check_stmt(stmt)?;
+                self.check_stmt(stmt, return_type)?;
             }
             BlockItem::D(decl) => {
                 self.check_local_decl(decl)?;
@@ -252,13 +262,15 @@ impl TypeChecker {
         Ok(())
     }
 
-    fn check_stmt(&mut self, stmt: &mut Stmt) -> SemanticResult<()> {
+    fn check_stmt(&mut self, stmt: &mut Stmt, return_type: Type) -> SemanticResult<()> {
         match stmt {
             Stmt::Compound { block } => {
-                self.check_block(block)?;
+                self.check_block(block, return_type)?;
             }
             Stmt::Return { expr } => {
                 self.check_expr(expr)?;
+
+                *expr = convert_to(expr, return_type)
             }
             Stmt::Expression { expr } => {
                 self.check_expr(expr)?;
@@ -269,25 +281,25 @@ impl TypeChecker {
                 otherwise,
             } => {
                 self.check_expr(condition)?;
-                self.check_stmt(then)?;
+                self.check_stmt(then, return_type.clone())?;
 
                 if let Some(otherwise) = otherwise {
-                    self.check_stmt(otherwise)?;
+                    self.check_stmt(otherwise, return_type)?;
                 }
             }
             Stmt::LabeledStmt { label: _, stmt } => {
-                self.check_stmt(stmt)?;
+                self.check_stmt(stmt, return_type)?;
             }
             Stmt::While {
                 condition, body, ..
             } => {
                 self.check_expr(condition)?;
-                self.check_stmt(body)?;
+                self.check_stmt(body, return_type)?;
             }
             Stmt::DoWhile {
                 body, condition, ..
             } => {
-                self.check_stmt(body)?;
+                self.check_stmt(body, return_type)?;
                 self.check_expr(condition)?;
             }
             Stmt::For {
@@ -324,18 +336,18 @@ impl TypeChecker {
                     self.check_expr(post)?;
                 }
 
-                self.check_stmt(body)?;
+                self.check_stmt(body, return_type)?;
             }
             Stmt::Switch { control, body, .. } => {
                 self.check_expr(control)?;
-                self.check_stmt(body)?;
+                self.check_stmt(body, return_type)?;
             }
             Stmt::Case { constant, body, .. } => {
                 self.check_expr(constant)?;
-                self.check_stmt(body)?;
+                self.check_stmt(body, return_type)?;
             }
             Stmt::Default { body, .. } => {
-                self.check_stmt(body)?;
+                self.check_stmt(body, return_type)?;
             }
             Stmt::Null | Stmt::Goto { .. } | Stmt::Break { .. } | Stmt::Continue { .. } => {}
         }
