@@ -232,6 +232,7 @@ impl Parser {
 
         while let Some(token) = self.peek() {
             if is_type_specifier(token.kind) {
+                self.tokens.next();
                 specs.push(token.kind);
             } else {
                 break;
@@ -279,6 +280,8 @@ impl Parser {
             return_type: Box::from(func_type.clone()),
         });
 
+        self.expect(TokenType::CloseParen)?;
+        
         let mut body = None;
 
         if self
