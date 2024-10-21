@@ -88,9 +88,12 @@ impl Parser {
 
     fn parse_block_item(&mut self) -> Result<BlockItem, ParseError> {
         match self.tokens.peek() {
-            match_token_types!(TokenType::Int, TokenType::Static, TokenType::Extern) => {
-                Ok(BlockItem::D(self.parse_decl()?))
-            }
+            match_token_types!(
+                TokenType::Int,
+                TokenType::Long,
+                TokenType::Static,
+                TokenType::Extern
+            ) => Ok(BlockItem::D(self.parse_decl()?)),
             Some(_) => Ok(BlockItem::S(self.parse_stmt()?)),
             None => Err(ParseError::new(
                 "Expected function body, but found end of file instead".to_string(),
@@ -194,7 +197,7 @@ impl Parser {
             [TokenType::Long]
             | [TokenType::Int, TokenType::Long]
             | [TokenType::Long, TokenType::Int] => Ok(Type::Long),
-            [tokens @ ..] => {
+            tokens => {
                 let invalid = tokens
                     .iter()
                     .map(|t| format!("{:?}", t))
@@ -244,6 +247,7 @@ impl Parser {
 
     fn parse_param_list(&mut self) -> Result<Vec<(Type, String)>, ParseError> {
         if self.peek().unwrap().kind == TokenType::Void {
+            self.expect(TokenType::Void)?;
             Ok(vec![])
         } else {
             let mut params = vec![];
@@ -281,7 +285,7 @@ impl Parser {
         });
 
         self.expect(TokenType::CloseParen)?;
-        
+
         let mut body = None;
 
         if self
@@ -636,9 +640,12 @@ impl Parser {
 
     fn parse_for_init(&mut self) -> Result<ForInit, ParseError> {
         match self.peek() {
-            match_token_types!(TokenType::Int, TokenType::Static, TokenType::Extern) => {
-                Ok(ForInit::Decl(self.parse_var_decl()?))
-            }
+            match_token_types!(
+                TokenType::Int,
+                TokenType::Long,
+                TokenType::Static,
+                TokenType::Extern
+            ) => Ok(ForInit::Decl(self.parse_var_decl()?)),
             Some(_) => Ok(ForInit::Expr(
                 self.parse_optional_expr(TokenType::Semicolon)?,
             )),
@@ -770,15 +777,32 @@ impl Parser {
 
     fn parse_primary_expr(&mut self) -> Result<Expr, ParseError> {
         match self.peek() {
+            // cast or parenthesized expr
             Some(Token {
                 kind: TokenType::OpenParen,
                 ..
             }) => {
+                // consume open paren token
                 self.tokens.next();
-                let expr = self.parse_expr(0)?;
-                self.expect(TokenType::CloseParen)?;
 
-                Ok(expr)
+                // cast
+                if is_type_specifier(self.peek().unwrap().kind) {
+                    let type_specs = self.parse_type_specifier_list()?;
+                    let target_type = self.parse_type(type_specs)?;
+
+                    self.expect(TokenType::CloseParen)?;
+
+                    let inner_expr = self.parse_factor()?;
+
+                    Ok(Expr::new(ExprKind::Cast {
+                        target_type,
+                        expr: Box::from(inner_expr),
+                    }))
+                } else {
+                    let expr = self.parse_expr(0)?;
+                    self.expect(TokenType::CloseParen)?;
+                    Ok(expr)
+                }
             }
             Some(Token {
                 kind: TokenType::Constant,
