@@ -8,7 +8,7 @@ use thiserror::Error;
 use codegen::gen_assm;
 use emission::output;
 use lexer::{Lexer, TokenType};
-use mir::{debug_tacky, gen_tacky};
+// use mir::{debug_tacky, gen_tacky};
 use parser::Parser;
 use semantic_analysis::{analyze_switches, label_loops, resolve, validate_labels, TypeChecker};
 
@@ -202,11 +202,12 @@ fn compile(path: &str, stop_stage: &Option<StopStage>, assm_path: &str, debug: b
         }
 
         return Err(CompileErr::Lexer(error_msgs).into());
-    } else {
     }
 
+    // println!("{:#?}", tokens);
+
+
     if let Some(StopStage::Lexer) = stop_stage {
-        // tokenize() should have returned any error by now
         return Ok(());
     }
 
@@ -225,13 +226,12 @@ fn compile(path: &str, stop_stage: &Option<StopStage>, assm_path: &str, debug: b
 
     label_loops(&mut ast)?;
 
-    analyze_switches(&mut ast)?;
-
     // println!("PRE-TYPE_CHECKER AST:\n{:#?}", ast);
 
     let mut type_checker = TypeChecker::new();
+    type_checker.check(&mut ast)?;
 
-    type_checker.check(&ast)?;
+    analyze_switches(&mut ast)?;
 
     // println!("RESOLVED AST:\n{:#?}", ast);
 
@@ -239,32 +239,32 @@ fn compile(path: &str, stop_stage: &Option<StopStage>, assm_path: &str, debug: b
         return Ok(());
     }
 
-    let tacky = gen_tacky(&ast, &type_checker.symbols);
+    // let tacky = gen_tacky(&ast, &type_checker.symbols);
 
-    if debug {
-        // println!("Assm Path: {}", assm_path);
+    // if debug {
+    //     // println!("Assm Path: {}", assm_path);
 
-        let tacky_name: Vec<_> = assm_path.split(".s").collect();
-        let tacky_name = format!("{}.tacky", tacky_name.get(0).unwrap());
+    //     let tacky_name: Vec<_> = assm_path.split(".s").collect();
+    //     let tacky_name = format!("{}.tacky", tacky_name.get(0).unwrap());
 
-        debug_tacky(&tacky, tacky_name)?;
-    }
+    //     debug_tacky(&tacky, tacky_name)?;
+    // }
 
-    // println!("TACKY:\n{:#?}", tacky);
+    // // println!("TACKY:\n{:#?}", tacky);
 
-    if let Some(StopStage::Tacky) = stop_stage {
-        return Ok(());
-    }
+    // if let Some(StopStage::Tacky) = stop_stage {
+    //     return Ok(());
+    // }
 
-    let assm_ast = gen_assm(&tacky, &mut type_checker.symbols);
+    // let assm_ast = gen_assm(&tacky, &mut type_checker.symbols);
 
-    // println!("ASSM:\n{:#?}", assm_ast);
+    // // println!("ASSM:\n{:#?}", assm_ast);
 
-    if let Some(StopStage::CodeGen) = stop_stage {
-        return Ok(());
-    }
+    // if let Some(StopStage::CodeGen) = stop_stage {
+    //     return Ok(());
+    // }
 
-    output(assm_path, assm_ast, &type_checker.symbols)?;
+    // output(assm_path, assm_ast, &type_checker.symbols)?;
 
     Ok(())
 }
