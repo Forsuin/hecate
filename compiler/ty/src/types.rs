@@ -7,6 +7,20 @@ pub enum Type {
     Func(FuncType),
 }
 
+impl Display for Type {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Type::Int => "int",
+                Type::Long => "long",
+                Type::Func(_) => "function",
+            }
+        )
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FuncType {
     pub param_types: Vec<Type>,
@@ -16,8 +30,14 @@ pub struct FuncType {
 #[derive(Debug, PartialEq, Clone)]
 pub enum InitialVal {
     Tentative,
-    Initial(Constant),
+    Initial(StaticInit),
     NoInit,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum StaticInit {
+    Int(i32),
+    Long(i64),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -64,5 +84,13 @@ pub fn get_common_type(first: Type, second: Type) -> Type {
         first
     } else {
         Type::Long
+    }
+}
+
+pub fn const_convert(target_type: Type, constant: Constant) -> Constant {
+    match (target_type, constant.clone()) {
+        (Type::Long, Constant::Int(val)) => Constant::Long(val as i64),
+        (Type::Int, Constant::Long(val)) => Constant::Int(val as i32),
+        _ => constant,
     }
 }

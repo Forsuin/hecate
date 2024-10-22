@@ -28,24 +28,15 @@ impl TypeChecker {
     }
 
     fn check_file_scope_var_decl(&mut self, var: &VarDecl) -> SemanticResult<()> {
+        let default_init = if var.storage_class == Some(StorageClass::Extern) {
+            InitialVal::NoInit
+        } else {
+            InitialVal::Tentative
+        };
+
         let current_init = match &var.init {
-            Some(Expr {
-                kind: ExprKind::Constant(c),
-                ..
-            }) => InitialVal::Initial(c.clone()),
-            None => {
-                if var.storage_class == Some(StorageClass::Extern) {
-                    InitialVal::NoInit
-                } else {
-                    InitialVal::Tentative
-                }
-            }
-            Some(_) => {
-                return Err(SemErr::new(format!(
-                    "File scope variable '{}' has non-constant initializer",
-                    var.name
-                )))
-            }
+            Some(init) => to_static_init(var.var_type.clone(), init.clone())?,
+            None => default_init,
         };
 
         let current_global = var.storage_class != Some(StorageClass::Static);
@@ -55,11 +46,15 @@ impl TypeChecker {
         let (global, init) = match old_decl {
             None => (current_global, current_init.clone()),
             Some(decl) => {
-                if decl.t != Type::Int {
+                if matches!(decl.t, Type::Func(..)) {
                     Err(SemErr::new(format!(
                         "Function '{}' redeclared as variable",
                         var.name
                     )))?;
+                }
+
+                if decl.t != var.var_type {
+                    return Err(SemErr::new(format!("Variable '{}' redeclared with a different type: '{:?}'", var.name, var.var_type)));
                 }
 
                 match &decl.attrs {
@@ -89,7 +84,7 @@ impl TypeChecker {
         };
 
         self.symbols
-            .add_static_var(var.name.clone(), Type::Int, global, init);
+            .add_static_var(var.name.clone(), var.var_type.clone(), global, init);
 
         Ok(())
     }
@@ -149,19 +144,23 @@ impl TypeChecker {
             .add_func(decl.ident.clone(), func_type.clone(), global, defined);
 
         if let Some(body) = &mut decl.body {
-            for param in decl.params.clone() {
-                self.symbols.add_automatic_var(param, Type::Int);
-            }
-
-            let return_type = match func_type {
-                Type::Int | Type::Long => {
+            let (param_types, return_type) = match func_type {
+                Type::Func(FuncType {
+                               param_types, return_type 
+                           }) => {
+                    (param_types, return_type)
+                }
+                _ => {
                     return Err(SemErr::new(format!(
                         "Internal Error: function '{}' has non-function type",
                         decl.ident
                     )));
                 }
-                Type::Func(func_type) => func_type.return_type,
             };
+            
+            for (param_name, param_type) in zip(decl.params.clone(), param_types) {
+                self.symbols.add_automatic_var(param_name, param_type);
+            }
 
             self.check_block(body, *return_type)?;
         }
@@ -223,38 +222,45 @@ impl TypeChecker {
                         );
                     }
                     Some(old_decl) => {
-                        if old_decl.t != Type::Int {
+                        if old_decl.t != var.var_type {
                             return Err(SemErr::new(format!(
-                                "Function '{}' redeclared as variable",
-                                var.name
+                                "{} '{}' redeclared with different type: {}",
+                                old_decl.t, var.name, var.var_type
                             )));
                         }
                     }
                 }
             }
             Some(StorageClass::Static) => {
-                let init_val = match &var.init {
-                    Some(Expr {
-                        kind: ExprKind::Constant(i),
-                        ..
-                    }) => InitialVal::Initial(i.clone()),
-                    None => InitialVal::Initial(Constant::Int(0)),
-                    Some(_) => {
+                let zero_init = InitialVal::Initial(match &var.var_type {
+                    Type::Int => StaticInit::Int(0),
+                    Type::Long => StaticInit::Long(0),
+                    Type::Func(_) => {
                         return Err(SemErr::new(format!(
-                            "Non-constant initializer on local static variable: '{}'",
+                            "Internal Error: Attempted to static init function '{}'",
                             var.name
-                        )))
+                        )));
                     }
+                });
+
+                let static_init = match &var.init {
+                    Some(init) => to_static_init(var.var_type.clone(), init.clone())?,
+                    None => zero_init,
                 };
 
                 self.symbols
-                    .add_static_var(var.name.clone(), Type::Int, false, init_val);
+                    .add_static_var(var.name.clone(), Type::Int, false, static_init);
             }
             None => {
-                self.symbols.add_automatic_var(var.name.clone(), Type::Int);
-                match &mut var.init {
-                    Some(init) => self.check_expr(init)?,
-                    None => {}
+                self.symbols
+                    .add_automatic_var(var.name.clone(), var.var_type.clone());
+
+                if let Some(init) = &mut var.init {
+                    self.check_expr(init)?;
+
+                    let init_cast = convert_to(init, var.var_type.clone());
+
+                    *init = init_cast;
                 }
             }
         }
@@ -342,7 +348,7 @@ impl TypeChecker {
                 self.check_expr(control)?;
                 self.check_stmt(body, return_type)?;
             }
-            Stmt::Case { constant, body, .. } => {
+            Stmt::Case { constant, body, label, } => {
                 self.check_expr(constant)?;
                 self.check_stmt(body, return_type)?;
             }
@@ -358,7 +364,7 @@ impl TypeChecker {
     fn check_expr(&mut self, expr: &mut Expr) -> SemanticResult<()> {
         match &mut expr.kind {
             ExprKind::Var(var) => {
-                let var_type = &self.symbols.get(&var).unwrap().t;
+                let var_type = &self.symbols.get(var).unwrap().t;
 
                 match var_type {
                     ty @ Type::Int | ty @ Type::Long => {
@@ -379,7 +385,10 @@ impl TypeChecker {
                 self.check_expr(body)?;
                 match op {
                     UnaryOp::Not => expr.set_type(Type::Int),
-                    _ => expr.set_type(expr.get_type().unwrap()),
+                    _ => {
+                        let body_type = body.get_type().unwrap();
+                        expr.set_type(body_type)
+                    },
                 }
             }
             ExprKind::Binary { op, left, right } => {
@@ -402,8 +411,8 @@ impl TypeChecker {
                         let right_type = right.get_type().unwrap();
                         let common_type = get_common_type(left_type, right_type);
 
-                        let left_cast = convert_to(&left, common_type.clone());
-                        let right_cast = convert_to(&right, common_type.clone());
+                        let left_cast = convert_to(left, common_type.clone());
+                        let right_cast = convert_to(right, common_type.clone());
 
                         **left = left_cast;
                         **right = right_cast;
@@ -432,7 +441,7 @@ impl TypeChecker {
 
                 let left_type = lvalue.get_type().unwrap();
 
-                let right_cast = convert_to(&body, left_type.clone());
+                let right_cast = convert_to(body, left_type.clone());
 
                 **body = right_cast;
                 expr.set_type(left_type);
@@ -449,8 +458,8 @@ impl TypeChecker {
                 let common_type =
                     get_common_type(then.get_type().unwrap(), otherwise.get_type().unwrap());
 
-                let then_cast = convert_to(&then, common_type.clone());
-                let otherwise_cast = convert_to(&otherwise, common_type.clone());
+                let then_cast = convert_to(then, common_type.clone());
+                let otherwise_cast = convert_to(otherwise, common_type.clone());
 
                 **then = then_cast;
                 **otherwise = otherwise_cast;
@@ -472,7 +481,7 @@ impl TypeChecker {
                     BinaryOp::BitshiftLeft | BinaryOp::BitshiftRight => left_type,
                     _ => {
                         let common_type = get_common_type(left_type, right_type);
-                        let right_cast = convert_to(&body, common_type.clone());
+                        let right_cast = convert_to(body, common_type.clone());
                         **body = right_cast;
 
                         common_type
@@ -517,10 +526,12 @@ impl TypeChecker {
                         for (arg, param_type) in zip(&mut *args, func_type.param_types) {
                             self.check_expr(arg)?;
 
-                            converted_args.push(convert_to(&arg, param_type));
+                            converted_args.push(convert_to(arg, param_type));
                         }
 
                         *args = converted_args;
+
+                        expr.set_type(*func_type.return_type)
                     }
                 }
             }
@@ -532,9 +543,10 @@ impl TypeChecker {
                     expr.set_type(Type::Long);
                 }
             },
-            ExprKind::Cast { target_type, expr } => {
-                self.check_expr(expr)?;
-                expr.set_type(target_type.clone());
+            ExprKind::Cast { target_type, expr: inner_expr } => {
+                self.check_expr(inner_expr)?;
+                let target_type = target_type.clone();
+                expr.set_type(target_type);
             }
         }
 
@@ -551,4 +563,17 @@ fn convert_to(expr: &Expr, target_type: Type) -> Expr {
     cast.set_type(target_type);
 
     cast
+}
+
+fn to_static_init(var_type: Type, init: Expr) -> SemanticResult<InitialVal> {
+    match init.kind {
+        ExprKind::Constant(val) => {
+            let init_val = match const_convert(var_type, val) {
+                Constant::Int(val) => StaticInit::Int(val),
+                Constant::Long(val) => StaticInit::Long(val),
+            };
+            Ok(InitialVal::Initial(init_val))
+        }
+        _ => Err(SemErr::new("Non-constant initializer on static variable".to_string())),
+    }
 }

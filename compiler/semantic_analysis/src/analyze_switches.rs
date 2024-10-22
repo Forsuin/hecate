@@ -1,12 +1,26 @@
 use std::collections::HashMap;
 
 use ast::*;
-use ty::Constant;
+use ty::{const_convert, Constant, Type};
 use unique_ident::make_label;
 
 use crate::sem_err::*;
 
 type CaseMap = HashMap<Option<Constant>, String>;
+#[derive(Clone)]
+struct SwitchCtx {
+    pub ty: Type,
+    pub map: CaseMap,
+}
+
+impl SwitchCtx {
+    pub fn new(ty: Type) -> Self {
+        Self {
+            ty,
+            map: CaseMap::new(),
+        }
+    }
+}
 
 pub fn analyze_switches(program: &mut TranslationUnit) -> SemanticResult<()> {
     for decl in &mut program.decls {
@@ -27,7 +41,7 @@ fn analyze_func(func: &mut FuncDecl) -> SemanticResult<()> {
     Ok(())
 }
 
-fn analyze_block(block: &mut Block, case_map: &mut Option<CaseMap>) -> SemanticResult<()> {
+fn analyze_block(block: &mut Block, case_map: &mut Option<SwitchCtx>) -> SemanticResult<()> {
     for item in &mut block.items {
         analyze_block_item(item, case_map)?
     }
@@ -37,7 +51,7 @@ fn analyze_block(block: &mut Block, case_map: &mut Option<CaseMap>) -> SemanticR
 
 fn analyze_block_item(
     block_item: &mut BlockItem,
-    case_map: &mut Option<CaseMap>,
+    case_map: &mut Option<SwitchCtx>,
 ) -> SemanticResult<()> {
     match block_item {
         BlockItem::S(stmt) => analyze_stmt(stmt, case_map)?,
@@ -47,7 +61,7 @@ fn analyze_block_item(
     Ok(())
 }
 
-fn analyze_stmt(stmt: &mut Stmt, case_map: &mut Option<CaseMap>) -> SemanticResult<()> {
+fn analyze_stmt(stmt: &mut Stmt, case_map: &mut Option<SwitchCtx>) -> SemanticResult<()> {
     match stmt {
         Stmt::Default { body, label } => analyze_case(None, case_map, "default", body, label),
         Stmt::Case {
@@ -68,11 +82,13 @@ fn analyze_stmt(stmt: &mut Stmt, case_map: &mut Option<CaseMap>) -> SemanticResu
             analyze_case(constant, case_map, "case", body, label)
         }
         Stmt::Switch {
-            control: _,
+            control,
             body,
             label: _,
         } => {
-            let case_map = CaseMap::new();
+            let switch_type = control.get_type().unwrap();
+
+            let case_map = SwitchCtx::new(switch_type);
 
             analyze_stmt(body, &mut Some(case_map))
         }
@@ -120,7 +136,7 @@ fn analyze_stmt(stmt: &mut Stmt, case_map: &mut Option<CaseMap>) -> SemanticResu
 
 fn analyze_case(
     key: Option<Constant>,
-    case_map: &mut Option<CaseMap>,
+    case_map: &mut Option<SwitchCtx>,
     label: &str,
     body: &mut Stmt,
     case_label: &mut String,
@@ -130,8 +146,10 @@ fn analyze_case(
         .as_mut()
         .expect("Found case statement outside of switch");
 
+    let key = key.map(|c| const_convert(case_map.clone().unwrap().ty, c));
+
     // check for duplicate cases
-    if case_map.as_mut().unwrap().contains_key(&key) {
+    if case_map.as_mut().unwrap().map.contains_key(&key) {
         let error = match key {
             Some(i) => SemErr::new(format!("Duplicate case found in switch statement: {}", i)),
             None => SemErr::new(format!("Duplicate default found in switch statement")),
@@ -142,7 +160,7 @@ fn analyze_case(
 
     // generate new label - "case" or "default"
     *case_label = make_label(label);
-    case_map.as_mut().unwrap().insert(key, case_label.clone());
+    case_map.as_mut().unwrap().map.insert(key, case_label.clone());
 
     analyze_stmt(body, case_map)?;
 
