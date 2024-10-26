@@ -76,6 +76,9 @@ fn emit_func<W: Write>(writer: &mut W, func: &Func, symbols: &SymbolTable) -> IO
         emit_instruction(writer, instruction, symbols)?;
     }
 
+    // extra line to seperate functions for easier reading
+    writeln!(writer)?;
+    
     Ok(())
 }
 
@@ -101,7 +104,8 @@ fn emit_instruction<W: Write>(
             )?;
         }
         Instruction::Ret => {
-            writeln!(writer, "\tmovq %rbp, %rsp")?;
+            // Newline to bring in line with reference compiler
+            writeln!(writer, "\n\tmovq %rbp, %rsp")?;
             writeln!(writer, "\tpopq %rbp")?;
             writeln!(writer, "\tret")?
         }

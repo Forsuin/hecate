@@ -339,17 +339,17 @@ fn gen_instructions(
                 // Pass args on stack
                 for param in stack_params.iter().rev() {
                     let arg = gen_operand(param);
-
+                    
                     if matches!(arg, Operand::Register(_) | Operand::Imm(_)) {
                         assm_instr.push(Instruction::Push(arg));
                     } else {
                         let assm_type = get_assm_type(param, symbols);
 
                         match assm_type {
-                            AssemblyType::Long => {
+                            AssemblyType::Quad => {
                                 assm_instr.push(Instruction::Push(arg));
                             }
-                            AssemblyType::Quad => {
+                            AssemblyType::Long => {
                                 assm_instr.push(Instruction::Mov {
                                     src: arg,
                                     dest: Operand::Register(Register::AX),
@@ -472,6 +472,6 @@ fn round_away_from_zero(n: i32, x: i32) -> i32 {
     } else if x < 0 {
         x - n - (x % n)
     } else {
-        x + n - (x & n)
+        x + n - (x % n)
     }
 }
