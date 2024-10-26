@@ -177,6 +177,7 @@ name = "lir"
 version = "0.1.0"
 dependencies = [
  "mir",
+ "ty",
 ]
 
 [[package]]

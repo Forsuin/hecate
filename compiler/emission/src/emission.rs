@@ -23,30 +23,39 @@ pub fn output(path: &str, assm: Program, symbols: &SymbolTable) -> IOResult {
 fn emit_decl<W: Write>(writer: &mut W, decl: &Decl, symbols: &SymbolTable) -> IOResult {
     match decl {
         Decl::Func(func) => emit_func(writer, func, symbols),
-        Decl::StaticVar(var) => emit_var(writer, var),
+        Decl::StaticVar(var) => emit_static_var(writer, var),
     }
 }
 
-fn emit_var<W: Write>(writer: &mut W, var: &StaticVar) -> IOResult {
+fn emit_static_var<W: Write>(writer: &mut W, var: &StaticVar) -> IOResult {
     writeln!(writer, "# <static var: {}>", var.name)?;
-    let init;
 
     if var.global {
         writeln!(writer, "\t.globl {}", var.name)?;
     }
 
     // which section variable goes
-
-    if var.init == 0 {
-        writeln!(writer, "\t.bss")?;
-        init = format!("\t.zero 4");
-    } else {
-        writeln!(writer, "\t.data")?;
-        init = format!("\t.long {}", var.init);
-    }
+    let init = match var.init {
+        StaticInit::Int(0) => {
+            writeln!(writer, "\t.bss")?;
+            "\t.zero 4".to_string()
+        }
+        StaticInit::Int(i) => {
+            writeln!(writer, "\t.data")?;
+            format!("\t.long {}", i)
+        }
+        StaticInit::Long(0) => {
+            writeln!(writer, "\t.bss")?;
+            "\t.zero 8".to_string()
+        }
+        StaticInit::Long(i) => {
+            writeln!(writer, "\t.data")?;
+            format!("\t.quad {}", i)
+        }
+    };
 
     // alignment
-    writeln!(writer, "\t.balign 4")?;
+    writeln!(writer, "\t.balign {}", var.alignment)?;
 
     writeln!(writer, "{}:", var.name)?;
     writeln!(writer, "{}", init)?;
@@ -55,11 +64,10 @@ fn emit_var<W: Write>(writer: &mut W, var: &StaticVar) -> IOResult {
 }
 
 fn emit_func<W: Write>(writer: &mut W, func: &Func, symbols: &SymbolTable) -> IOResult {
-    writeln!(writer, "# <function: {}>", func.name)?;
+    writeln!(writer, "\t.text")?;
     if func.global {
         writeln!(writer, "\t.globl {}", func.name)?;
     }
-    writeln!(writer, "\t.text")?;
     writeln!(writer, "{}:", func.name)?;
     writeln!(writer, "\tpushq %rbp")?;
     writeln!(writer, "\tmovq %rsp, %rbp")?;
@@ -77,62 +85,76 @@ fn emit_instruction<W: Write>(
     symbols: &SymbolTable,
 ) -> IOResult {
     match instruction {
-        Instruction::Mov { src, dest } => writeln!(
+        Instruction::Mov { src, dest, ty } => writeln!(
             writer,
-            "\tmovl {}, {}",
-            show_operand(src),
-            show_operand(dest)
+            "\tmov{} {}, {}",
+            show_type(ty),
+            show_operand(src, *ty),
+            show_operand(dest, *ty)
         )?,
+        Instruction::Movsx { src, dest } => {
+            writeln!(
+                writer,
+                "\tmovslq {}, {}",
+                show_operand(src, AssemblyType::Long),
+                show_operand(dest, AssemblyType::Quad)
+            )?;
+        }
         Instruction::Ret => {
-            writeln!(writer, "\n# <return>")?;
             writeln!(writer, "\tmovq %rbp, %rsp")?;
             writeln!(writer, "\tpopq %rbp")?;
             writeln!(writer, "\tret")?
         }
-        Instruction::Unary { op, dest } => {
-            writeln!(writer, "\t{} {}", show_unary(op), show_operand(dest))?;
-        }
-        Instruction::AllocateStack(amt) => {
-            // writeln!(writer, "# <Allocate {}>", amt)?;
-            writeln!(writer, "\tsubq ${}, %rsp", amt)?;
+        Instruction::Unary { op, dest, ty } => {
+            writeln!(
+                writer,
+                "\t{}{} {}",
+                show_unary(op),
+                show_type(ty),
+                show_operand(dest, *ty)
+            )?;
         }
         Instruction::Binary {
             op: op @ BinaryOp::Sal | op @ BinaryOp::Sar,
             src,
             dest,
+            ty,
         } => {
-            writeln!(writer, "# <{:?} {:?} {:?}>", src, op, dest)?;
             writeln!(
                 writer,
-                "\t{} {}, {}",
+                "\t{}{} {}, {}",
                 show_binary(op),
+                show_type(ty),
                 show_byte_operand(src),
-                show_operand(dest)
+                show_operand(dest, *ty)
             )?;
         }
-        Instruction::Binary { op, src, dest } => {
-            writeln!(writer, "# <{:?} {:?} {:?}>", src, op, dest)?;
+        Instruction::Binary { op, src, dest, ty } => {
             writeln!(
                 writer,
-                "\t{} {}, {}",
+                "\t{}{} {}, {}",
                 show_binary(op),
-                show_operand(src),
-                show_operand(dest)
+                show_type(ty),
+                show_operand(src, *ty),
+                show_operand(dest, *ty)
             )?;
         }
-        Instruction::Idiv(op) => {
-            writeln!(writer, "\tidivl {}", show_operand(op))?;
+        Instruction::Idiv(op, ty) => {
+            writeln!(writer, "\tidiv{} {}", show_type(ty), show_operand(op, *ty))?;
         }
-        Instruction::Cdq => {
+        Instruction::Cdq(AssemblyType::Long) => {
             writeln!(writer, "\tcdq")?;
         }
-
-        Instruction::Cmp(first, second) => {
+        Instruction::Cdq(AssemblyType::Quad) => {
+            writeln!(writer, "\tcqo")?;
+        }
+        Instruction::Cmp(first, second, ty) => {
             writeln!(
                 writer,
-                "\tcmpl {}, {}",
-                show_operand(first),
-                show_operand(second)
+                "\tcmp{} {}, {}",
+                show_type(ty),
+                show_operand(first, *ty),
+                show_operand(second, *ty)
             )?;
         }
         Instruction::Jmp { label } => {
@@ -150,15 +172,10 @@ fn emit_instruction<W: Write>(
             )?;
         }
         Instruction::Label(label) => {
-            writeln!(writer, "# <Label: {}>", label)?;
             writeln!(writer, ".L_{}:", label)?;
         }
-        Instruction::DeallocateStack(amt) => {
-            // writeln!(writer, "# <Deallocate: {}>", amt)?;
-            writeln!(writer, "\taddq ${}, %rsp", amt)?;
-        }
         Instruction::Push(op) => {
-            writeln!(writer, "\tpushq {}", show_quad_op(op))?;
+            writeln!(writer, "\tpushq {}", show_operand(op, AssemblyType::Quad))?;
         }
         Instruction::Call(func) => {
             writeln!(writer, "\tcall {}", show_fun_name(func, symbols))?;
@@ -166,6 +183,17 @@ fn emit_instruction<W: Write>(
     }
 
     Ok(())
+}
+
+fn show_type(ty: &AssemblyType) -> String {
+    (match ty {
+            AssemblyType::Long => {
+                "l"
+            }
+            AssemblyType::Quad => {
+                "q"
+            }
+        }).to_string()
 }
 
 fn show_fun_name(name: &String, symbols: &SymbolTable) -> String {
@@ -176,30 +204,23 @@ fn show_fun_name(name: &String, symbols: &SymbolTable) -> String {
     }
 }
 
-fn show_quad_op(op: &Operand) -> String {
-    match op {
-        Operand::Register(r) => show_quad_reg(r),
-        _ => show_operand(op),
-    }
-}
-
 fn show_unary(op: &UnaryOp) -> String {
     match op {
-        UnaryOp::Neg => "negl".to_string(),
-        UnaryOp::Not => "notl".to_string(),
+        UnaryOp::Neg => "neg".to_string(),
+        UnaryOp::Not => "not".to_string(),
     }
 }
 
 fn show_binary(op: &BinaryOp) -> String {
     match op {
-        BinaryOp::Add => "addl".to_string(),
-        BinaryOp::Sub => "subl".to_string(),
-        BinaryOp::Mult => "imull".to_string(),
-        BinaryOp::And => "andl".to_string(),
-        BinaryOp::Or => "orl".to_string(),
-        BinaryOp::Xor => "xorl".to_string(),
-        BinaryOp::Sal => "sall".to_string(),
-        BinaryOp::Sar => "sarl".to_string(),
+        BinaryOp::Add => "add".to_string(),
+        BinaryOp::Sub => "sub".to_string(),
+        BinaryOp::Mult => "imul".to_string(),
+        BinaryOp::And => "and".to_string(),
+        BinaryOp::Or => "or".to_string(),
+        BinaryOp::Xor => "xor".to_string(),
+        BinaryOp::Sal => "sal".to_string(),
+        BinaryOp::Sar => "sar".to_string(),
     }
 }
 
@@ -214,6 +235,7 @@ fn show_byte_reg(reg: &Register) -> String {
         Register::R9 => "%r9b".to_string(),
         Register::R10 => "%r10b".to_string(),
         Register::R11 => "%r11b".to_string(),
+        Register::SP => unreachable!("Internal Error: No byte size RSP"),
     }
 }
 
@@ -230,6 +252,8 @@ fn show_reg(reg: &Register) -> String {
             Register::R9 => "r9d",
             Register::R10 => "r10d",
             Register::R11 => "r11d",
+            Register::SP => unreachable!("Internal Error: No 32-bit RSP"),
+            
         }
     )
 }
@@ -247,6 +271,7 @@ fn show_quad_reg(reg: &Register) -> String {
             Register::R9 => "r9",
             Register::R10 => "r10",
             Register::R11 => "r11",
+            Register::SP => "rsp"
         }
     )
 }
@@ -254,13 +279,18 @@ fn show_quad_reg(reg: &Register) -> String {
 fn show_byte_operand(op: &Operand) -> String {
     match op {
         Operand::Register(reg) => show_byte_reg(reg),
-        _ => show_operand(op),
+        _ => show_operand(op, AssemblyType::Long),
     }
 }
 
-fn show_operand(op: &Operand) -> String {
+fn show_operand(op: &Operand, ty: AssemblyType) -> String {
     match op {
-        Operand::Register(reg) => show_reg(reg),
+        Operand::Register(reg) => {
+            match ty {
+                AssemblyType::Long => show_reg(reg),
+                AssemblyType::Quad => show_quad_reg(reg),
+            }
+        },
         Operand::Stack(amt) => format!("{}(%rbp)", amt),
         Operand::Imm(val) => format!("${}", val),
         Operand::Data(var) => format!("{}(%rip)", var),

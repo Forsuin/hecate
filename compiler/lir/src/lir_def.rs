@@ -1,4 +1,12 @@
+use ty::StaticInit;
+
 /// Defines assembly tree datatypes
+
+#[derive(Debug, Clone, Copy)]
+pub enum AssemblyType {
+    Long,
+    Quad,
+}
 
 #[derive(Debug, Clone)]
 pub struct Program {
@@ -22,7 +30,8 @@ pub struct Func {
 pub struct StaticVar {
     pub name: String,
     pub global: bool,
-    pub init: i32,
+    pub alignment: i32,
+    pub init: StaticInit,
 }
 
 #[derive(Debug, Clone)]
@@ -30,18 +39,25 @@ pub enum Instruction {
     Mov {
         src: Operand,
         dest: Operand,
+        ty: AssemblyType,
+    },
+    Movsx {
+        src: Operand,
+        dest: Operand,
     },
     Unary {
         op: UnaryOp,
         dest: Operand,
+        ty: AssemblyType,
     },
     Binary {
         op: BinaryOp,
         src: Operand,
         dest: Operand,
+        ty: AssemblyType,
     },
-    Cmp(Operand, Operand),
-    Idiv(Operand),
+    Cmp(Operand, Operand, AssemblyType),
+    Idiv(Operand, AssemblyType),
     Jmp {
         label: String,
     },
@@ -54,9 +70,7 @@ pub enum Instruction {
         dest: Operand,
     },
     Label(String),
-    Cdq,
-    AllocateStack(i32),
-    DeallocateStack(i32),
+    Cdq(AssemblyType),
     Push(Operand),
     Call(String),
     Ret,
@@ -82,7 +96,7 @@ pub enum BinaryOp {
 
 #[derive(Debug, Clone)]
 pub enum Operand {
-    Imm(i32),
+    Imm(i64),
     Register(Register),
     Pseudo(String),
     Stack(i32),
@@ -100,6 +114,7 @@ pub enum Register {
     R9,
     R10,
     R11,
+    SP,
 }
 
 #[derive(Debug, Clone)]

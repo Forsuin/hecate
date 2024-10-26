@@ -348,7 +348,7 @@ impl TypeChecker {
                 self.check_expr(control)?;
                 self.check_stmt(body, return_type)?;
             }
-            Stmt::Case { constant, body, label, } => {
+            Stmt::Case { constant, body, label: _, } => {
                 self.check_expr(constant)?;
                 self.check_stmt(body, return_type)?;
             }
@@ -446,26 +446,6 @@ impl TypeChecker {
                 **body = right_cast;
                 expr.set_type(left_type);
             }
-            ExprKind::Conditional {
-                condition,
-                then,
-                otherwise,
-            } => {
-                self.check_expr(condition)?;
-                self.check_expr(then)?;
-                self.check_expr(otherwise)?;
-
-                let common_type =
-                    get_common_type(then.get_type().unwrap(), otherwise.get_type().unwrap());
-
-                let then_cast = convert_to(then, common_type.clone());
-                let otherwise_cast = convert_to(otherwise, common_type.clone());
-
-                **then = then_cast;
-                **otherwise = otherwise_cast;
-
-                expr.set_type(common_type);
-            }
             ExprKind::CompoundAssignment {
                 op,
                 lvalue,
@@ -489,6 +469,26 @@ impl TypeChecker {
                 };
 
                 expr.set_type(result_type);
+            }
+            ExprKind::Conditional {
+                condition,
+                then,
+                otherwise,
+            } => {
+                self.check_expr(condition)?;
+                self.check_expr(then)?;
+                self.check_expr(otherwise)?;
+
+                let common_type =
+                    get_common_type(then.get_type().unwrap(), otherwise.get_type().unwrap());
+
+                let then_cast = convert_to(then, common_type.clone());
+                let otherwise_cast = convert_to(otherwise, common_type.clone());
+
+                **then = then_cast;
+                **otherwise = otherwise_cast;
+
+                expr.set_type(common_type);
             }
             ExprKind::PostfixInc(body) => {
                 self.check_expr(body)?;

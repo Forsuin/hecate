@@ -27,17 +27,30 @@ pub struct FuncType {
     pub return_type: Box<Type>,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Eq)]
 pub enum InitialVal {
     Tentative,
     Initial(StaticInit),
     NoInit,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Eq)]
 pub enum StaticInit {
     Int(i32),
     Long(i64),
+}
+
+impl Display for StaticInit {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            StaticInit::Int(i) => {
+                write!(f, "{}", i)
+            }
+            StaticInit::Long(i) => {
+                write!(f, "{}", i)
+            }
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -92,5 +105,15 @@ pub fn const_convert(target_type: Type, constant: Constant) -> Constant {
         (Type::Long, Constant::Int(val)) => Constant::Long(val as i64),
         (Type::Int, Constant::Long(val)) => Constant::Int(val as i32),
         _ => constant,
+    }
+}
+
+pub fn get_alignment(ty: &Type) -> i32 {
+    match ty {
+        Type::Int => 4,
+        Type::Long => 8,
+        Type::Func(_) => {
+            panic!("Internal Error: Function types don't have an alignment")
+        }
     }
 }

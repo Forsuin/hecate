@@ -1,3 +1,5 @@
+use ty::{Constant, StaticInit, Type};
+
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct TranslationUnit {
     pub decls: Vec<Decl>,
@@ -13,7 +15,8 @@ pub enum Decl {
 pub struct StaticVar {
     pub name: String,
     pub global: bool,
-    pub init: i32,
+    pub ty: Type,
+    pub init: StaticInit,
 }
 
 #[derive(Debug, Eq, PartialEq, Clone)]
@@ -59,11 +62,19 @@ pub enum Instruction {
         dest: Val,
     },
     Label(String),
+    SignExtend {
+        src: Val,
+        dest: Val,
+    },
+    Truncate {
+        src: Val,
+        dest: Val,
+    },
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Val {
-    Constant(i32),
+    Constant(Constant),
     Var(String),
 }
 

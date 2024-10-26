@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 
+use lir::symbol_table::AsmTable;
 use lir::*;
-use ty::SymbolTable;
+use crate::round_away_from_zero;
 
 #[derive(Debug)]
 pub struct ReplacementState {
@@ -10,7 +11,7 @@ pub struct ReplacementState {
     offset_map: HashMap<String, i32>,
 }
 
-pub fn replace_psuedos(assm_ast: &Program, symbol_table: &mut SymbolTable) -> Program {
+pub fn replace_psuedos(assm_ast: &Program, symbol_table: &mut AsmTable) -> Program {
     Program {
         decls: assm_ast
             .decls
@@ -20,14 +21,14 @@ pub fn replace_psuedos(assm_ast: &Program, symbol_table: &mut SymbolTable) -> Pr
     }
 }
 
-fn replace_decl(decl: &Decl, symbol_table: &mut SymbolTable) -> Decl {
+fn replace_decl(decl: &Decl, symbol_table: &mut AsmTable) -> Decl {
     match decl {
         Decl::Func(func) => Decl::Func(replace_func(func, symbol_table)),
         Decl::StaticVar(_) => decl.clone(),
     }
 }
 
-fn replace_func(func: &Func, symbol_table: &mut SymbolTable) -> Func {
+fn replace_func(func: &Func, symbol_table: &mut AsmTable) -> Func {
     let mut state = ReplacementState {
         current_offset: 0,
         offset_map: HashMap::new(),
@@ -38,9 +39,7 @@ fn replace_func(func: &Func, symbol_table: &mut SymbolTable) -> Func {
         .map(|instr| replace_instruction(instr, &mut state, symbol_table))
         .collect();
 
-    symbol_table
-        .set_bytes_required(&func.name, state.current_offset)
-        .unwrap();
+    symbol_table.set_bytes_required(&func.name, state.current_offset);
 
     Func {
         name: func.name.clone(),
@@ -52,41 +51,52 @@ fn replace_func(func: &Func, symbol_table: &mut SymbolTable) -> Func {
 fn replace_instruction(
     instruction: &Instruction,
     state: &mut ReplacementState,
-    symbol_table: &mut SymbolTable,
+    symbol_table: &mut AsmTable,
 ) -> Instruction {
     match instruction {
-        Instruction::Mov { src, dest } => {
+        Instruction::Mov { src, dest, ty } => {
             let src = replace_operand(src, state, symbol_table);
             let dest = replace_operand(dest, state, symbol_table);
-            Instruction::Mov { src, dest }
+            Instruction::Mov {
+                src,
+                dest,
+                ty: ty.clone(),
+            }
         }
-        Instruction::Unary { op, dest } => {
+        Instruction::Movsx { src, dest } => {
+            Instruction::Movsx {
+                src: replace_operand(src, state, symbol_table),
+                dest: replace_operand(dest, state, symbol_table),
+            }
+        },
+        Instruction::Unary { op, dest, ty } => {
             let dest = replace_operand(dest, state, symbol_table);
             Instruction::Unary {
                 op: op.clone(),
                 dest,
+                ty: ty.clone(),
             }
         }
-        Instruction::AllocateStack(amt) => Instruction::AllocateStack(*amt),
         Instruction::Ret => Instruction::Ret,
-        Instruction::Binary { op, src, dest } => {
+        Instruction::Binary { op, src, dest, ty } => {
             let src = replace_operand(src, state, symbol_table);
             let dest = replace_operand(dest, state, symbol_table);
             Instruction::Binary {
                 op: op.clone(),
                 src,
                 dest,
+                ty: ty.clone(),
             }
         }
-        Instruction::Idiv(op) => {
+        Instruction::Idiv(op, ty) => {
             let op = replace_operand(op, state, symbol_table);
-            Instruction::Idiv(op)
+            Instruction::Idiv(op, ty.clone())
         }
-        Instruction::Cdq => Instruction::Cdq,
-        Instruction::Cmp(first, second) => {
+        Instruction::Cdq(ty) => Instruction::Cdq(ty.clone()),
+        Instruction::Cmp(first, second, ty) => {
             let first = replace_operand(first, state, symbol_table);
             let second = replace_operand(second, state, symbol_table);
-            Instruction::Cmp(first, second)
+            Instruction::Cmp(first, second, ty.clone())
         }
         Instruction::Jmp { label } => Instruction::Jmp {
             label: label.clone(),
@@ -103,7 +113,6 @@ fn replace_instruction(
             }
         }
         Instruction::Label(ident) => Instruction::Label(ident.clone()),
-        Instruction::DeallocateStack(amt) => Instruction::DeallocateStack(*amt),
         Instruction::Push(op) => Instruction::Push(replace_operand(op, state, symbol_table)),
         Instruction::Call(fun) => Instruction::Call(fun.clone()),
     }
@@ -112,21 +121,31 @@ fn replace_instruction(
 fn replace_operand(
     operand: &Operand,
     state: &mut ReplacementState,
-    symbols: &mut SymbolTable,
+    symbols: &mut AsmTable,
 ) -> Operand {
     match operand {
         Operand::Pseudo(var) => {
-            if symbols.is_static(var).unwrap() {
+            if symbols.is_static(var) {
                 Operand::Data(var.clone())
             } else {
                 match state.offset_map.get(var) {
+                    // Already assigned operand a stack slot
+                    Some(offset) => {
+                        Operand::Stack(*offset)
+                    }
+                    // Need to assign stack slot
                     None => {
-                        let new_offset = state.current_offset - 4;
+                        let size = symbols.get_size(var);
+                        let alignment = symbols.get_alignment(var);
+                        
+                        let new_offset = round_away_from_zero(alignment, state.current_offset - size);
+                        
                         state.current_offset = new_offset;
                         state.offset_map.insert(var.clone(), new_offset);
+                        
+                        
                         Operand::Stack(new_offset)
                     }
-                    Some(offset) => Operand::Stack(*offset),
                 }
             }
         }

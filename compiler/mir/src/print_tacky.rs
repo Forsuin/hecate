@@ -1,6 +1,6 @@
 use std::fs::File;
 use std::io::{BufWriter, Write};
-
+use ty::Constant;
 use crate::tacky::*;
 
 type IOResult = std::io::Result<()>;
@@ -9,7 +9,16 @@ pub fn debug_tacky(program: &TranslationUnit, file_name: String) -> IOResult {
     let output = File::create(file_name)?;
     let mut writer = BufWriter::new(output);
 
-    for decl in &program.decls {
+    let (vars, funcs): (Vec<_>, Vec<_>) = program.decls.iter().partition(|decl| match decl {
+        Decl::Func(_) => { false }
+        Decl::StaticVar(_) => { true }
+    });
+    
+    for var in vars {
+        print_decl(&mut writer, var)?
+    }
+    
+    for decl in funcs {
         print_decl(&mut writer, decl)?;
     }
 
@@ -24,10 +33,14 @@ fn print_decl<W: Write>(writer: &mut W, decl: &Decl) -> IOResult {
             print_func(writer, func)?;
         }
         Decl::StaticVar(var) => {
-            if var.global {
-                writeln!(writer, "\tglobal")?;
-                writeln!(writer, "\t{} = {}", var.name, var.init)?;
-            }
+            writeln!(
+                writer,
+                "\t{}{} {} = {}",
+                if var.global { "global " } else { "" },
+                var.ty,
+                var.name,
+                var.init
+            )?;
         }
     }
 
@@ -120,13 +133,22 @@ fn print_instruction<W: Write>(writer: &mut W, instr: &Instruction) -> IOResult 
                     .join(", ")
             )
         }
+        Instruction::SignExtend { src, dest } => {
+            writeln!(writer, "\t{} = SignExtend({})", format_val(src), format_val(dest))
+        }
+        Instruction::Truncate { src, dest } => {
+            writeln!(writer, "\t{} = Truncate({})", format_val(src), format_val(dest))
+        }
     }
 }
 
 fn format_val(val: &Val) -> String {
     match val {
-        Val::Constant(c) => {
-            format!("{}", *c)
+        Val::Constant(Constant::Int(i)) => {
+            format!("{}", *i)
+        }
+        Val::Constant(Constant::Long(i)) => {
+            format!("{}l", *i)
         }
         Val::Var(var) => var.clone(),
     }

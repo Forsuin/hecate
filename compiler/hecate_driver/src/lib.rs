@@ -8,7 +8,7 @@ use thiserror::Error;
 use codegen::gen_assm;
 use emission::output;
 use lexer::{Lexer, TokenType};
-// use mir::{debug_tacky, gen_tacky};
+use mir::{debug_tacky, gen_tacky};
 use parser::Parser;
 use semantic_analysis::{analyze_switches, label_loops, resolve, validate_labels, TypeChecker};
 
@@ -73,7 +73,7 @@ enum StopStage {
 
 impl StopStage {
     fn from_args(options: &StageOptions) -> Option<StopStage> {
-        return if options.lex {
+        if options.lex {
             Some(StopStage::Lexer)
         } else if options.parse {
             Some(StopStage::Parser)
@@ -89,7 +89,7 @@ impl StopStage {
             Some(StopStage::Object)
         } else {
             None
-        };
+        }
     }
 }
 
@@ -147,8 +147,8 @@ fn run_driver(path: &str, stop_stage: &Option<StopStage>, debug: bool) -> Result
         .output()
         .expect("Failed to execute assembler");
 
-    std::io::stdout().write_all(&output.stdout).unwrap();
-    std::io::stderr().write_all(&output.stderr).unwrap();
+    std::io::stdout().write_all(&output.stdout)?;
+    std::io::stderr().write_all(&output.stderr)?;
 
     if let Some(StopStage::Object) = stop_stage {
         return Ok(());
@@ -164,8 +164,8 @@ fn run_driver(path: &str, stop_stage: &Option<StopStage>, debug: bool) -> Result
         .output()
         .expect("Failed to execute assembler and linker");
 
-    std::io::stdout().write_all(&output.stdout).unwrap();
-    std::io::stderr().write_all(&output.stderr).unwrap();
+    std::io::stdout().write_all(&output.stdout)?;
+    std::io::stderr().write_all(&output.stderr)?;
 
     Ok(())
 }
@@ -177,7 +177,7 @@ fn compile(path: &str, stop_stage: &Option<StopStage>, assm_path: &str, debug: b
     // This function will be responsible for actually deciding whether to output any files
 
     let source =
-        read_to_string(path).expect(format!("Unable to read source file: {}", path).as_str());
+        read_to_string(path).unwrap_or_else(|_| panic!("Unable to read source file: {}", path));
 
     let mut lexer = Lexer::new(&source);
 
@@ -197,7 +197,7 @@ fn compile(path: &str, stop_stage: &Option<StopStage>, assm_path: &str, debug: b
                 path.rsplit_once('/').unwrap().1,
                 err.line,
                 err.col,
-                source[err.start..err.end].to_string()
+                &source[err.start..err.end]
             ));
         }
 
@@ -239,32 +239,32 @@ fn compile(path: &str, stop_stage: &Option<StopStage>, assm_path: &str, debug: b
         return Ok(());
     }
 
-    // let tacky = gen_tacky(&ast, &type_checker.symbols);
+    let tacky = gen_tacky(&ast, &mut type_checker.symbols);
+    
+    if debug {
+        // println!("Assm Path: {}", assm_path);
 
-    // if debug {
-    //     // println!("Assm Path: {}", assm_path);
+        let tacky_name: Vec<_> = assm_path.split(".s").collect();
+        let tacky_name = format!("{}.tacky", tacky_name.first().unwrap());
 
-    //     let tacky_name: Vec<_> = assm_path.split(".s").collect();
-    //     let tacky_name = format!("{}.tacky", tacky_name.get(0).unwrap());
+        debug_tacky(&tacky, tacky_name)?;
+    }
 
-    //     debug_tacky(&tacky, tacky_name)?;
-    // }
+    // println!("TACKY:\n{:#?}", tacky);
 
-    // // println!("TACKY:\n{:#?}", tacky);
+    if let Some(StopStage::Tacky) = stop_stage {
+        return Ok(());
+    }
 
-    // if let Some(StopStage::Tacky) = stop_stage {
-    //     return Ok(());
-    // }
+    let assm_ast = gen_assm(&tacky, &mut type_checker.symbols);
 
-    // let assm_ast = gen_assm(&tacky, &mut type_checker.symbols);
+    // println!("ASSM:\n{:#?}", assm_ast);
 
-    // // println!("ASSM:\n{:#?}", assm_ast);
+    if let Some(StopStage::CodeGen) = stop_stage {
+        return Ok(());
+    }
 
-    // if let Some(StopStage::CodeGen) = stop_stage {
-    //     return Ok(());
-    // }
-
-    // output(assm_path, assm_ast, &type_checker.symbols)?;
+    output(assm_path, assm_ast, &type_checker.symbols)?;
 
     Ok(())
 }

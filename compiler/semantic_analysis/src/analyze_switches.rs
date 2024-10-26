@@ -69,7 +69,7 @@ fn analyze_stmt(stmt: &mut Stmt, case_map: &mut Option<SwitchCtx>) -> SemanticRe
             body,
             label,
         } => {
-            let constant = match &constant.kind {
+            let const_expr = match &constant.kind {
                 ExprKind::Constant(c) => Some(c.clone()),
                 _ => {
                     return Err(SemErr::new(format!(
@@ -79,7 +79,11 @@ fn analyze_stmt(stmt: &mut Stmt, case_map: &mut Option<SwitchCtx>) -> SemanticRe
                 }
             };
 
-            analyze_case(constant, case_map, "case", body, label)
+            analyze_case(const_expr, case_map, "case", body, label)?;
+            
+            constant.set_type(case_map.clone().unwrap().ty);
+            
+            Ok(())
         }
         Stmt::Switch {
             control,
@@ -146,13 +150,14 @@ fn analyze_case(
         .as_mut()
         .expect("Found case statement outside of switch");
 
-    let key = key.map(|c| const_convert(case_map.clone().unwrap().ty, c));
+    // convert case to type of switch statement
+    let key = key.map(|c| const_convert(case_map.clone().unwrap().ty, c.clone()));
 
     // check for duplicate cases
     if case_map.as_mut().unwrap().map.contains_key(&key) {
         let error = match key {
             Some(i) => SemErr::new(format!("Duplicate case found in switch statement: {}", i)),
-            None => SemErr::new(format!("Duplicate default found in switch statement")),
+            None => SemErr::new("Duplicate default found in switch statement".to_string()),
         };
 
         return Err(error);
@@ -160,7 +165,7 @@ fn analyze_case(
 
     // generate new label - "case" or "default"
     *case_label = make_label(label);
-    case_map.as_mut().unwrap().map.insert(key, case_label.clone());
+    case_map.as_mut().unwrap().map.insert(key.clone(), case_label.clone());
 
     analyze_stmt(body, case_map)?;
 
