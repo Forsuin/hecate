@@ -1,7 +1,7 @@
+use crate::tacky::*;
 use std::fs::File;
 use std::io::{BufWriter, Write};
-use ty::Constant;
-use crate::tacky::*;
+use ty::{Constant, StaticInit};
 
 type IOResult = std::io::Result<()>;
 
@@ -10,14 +10,14 @@ pub fn debug_tacky(program: &TranslationUnit, file_name: String) -> IOResult {
     let mut writer = BufWriter::new(output);
 
     let (vars, funcs): (Vec<_>, Vec<_>) = program.decls.iter().partition(|decl| match decl {
-        Decl::Func(_) => { false }
-        Decl::StaticVar(_) => { true }
+        Decl::Func(_) => false,
+        Decl::StaticVar(_) => true,
     });
-    
+
     for var in vars {
         print_decl(&mut writer, var)?
     }
-    
+
     for decl in funcs {
         print_decl(&mut writer, decl)?;
     }
@@ -39,12 +39,21 @@ fn print_decl<W: Write>(writer: &mut W, decl: &Decl) -> IOResult {
                 if var.global { "global " } else { "" },
                 var.ty,
                 var.name,
-                var.init
+                format_static_init(&var.init)
             )?;
         }
     }
 
     Ok(())
+}
+
+fn format_static_init(init: &StaticInit) -> String {
+    match init {
+        StaticInit::Int(i) => format!("{}", *i),
+        StaticInit::Long(i) => format!("{}l", *i),
+        StaticInit::UInt(i) => format!("{}u", *i),
+        StaticInit::ULong(i) => format!("{}ul", *i),
+    }
 }
 
 fn print_func<W: Write>(writer: &mut W, func: &Func) -> IOResult {
@@ -134,13 +143,28 @@ fn print_instruction<W: Write>(writer: &mut W, instr: &Instruction) -> IOResult 
             )
         }
         Instruction::SignExtend { src, dest } => {
-            writeln!(writer, "\t{} = SignExtend({})", format_val(src), format_val(dest))
+            writeln!(
+                writer,
+                "\t{} = SignExtend({})",
+                format_val(src),
+                format_val(dest)
+            )
         }
         Instruction::Truncate { src, dest } => {
-            writeln!(writer, "\t{} = Truncate({})", format_val(src), format_val(dest))
+            writeln!(
+                writer,
+                "\t{} = Truncate({})",
+                format_val(src),
+                format_val(dest)
+            )
         }
         Instruction::ZeroExtend { src, dest } => {
-            writeln!(writer, "\t{} = ZeroExtend({})", format_val(src), format_val(dest))
+            writeln!(
+                writer,
+                "\t{} = ZeroExtend({})",
+                format_val(src),
+                format_val(dest)
+            )
         }
     }
 }

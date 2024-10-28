@@ -60,7 +60,7 @@ fn replace_instruction(
             Instruction::Mov {
                 src,
                 dest,
-                ty: ty.clone(),
+                ty: *ty,
             }
         }
         Instruction::Movsx { src, dest } => {
@@ -69,12 +69,18 @@ fn replace_instruction(
                 dest: replace_operand(dest, state, symbol_table),
             }
         },
+        Instruction::MovZeroExtend { src, dest } => {
+            Instruction::MovZeroExtend {
+                src: replace_operand(src, state, symbol_table),
+                dest: replace_operand(dest, state, symbol_table),
+            }
+        }
         Instruction::Unary { op, dest, ty } => {
             let dest = replace_operand(dest, state, symbol_table);
             Instruction::Unary {
                 op: op.clone(),
                 dest,
-                ty: ty.clone(),
+                ty: *ty,
             }
         }
         Instruction::Ret => Instruction::Ret,
@@ -85,18 +91,22 @@ fn replace_instruction(
                 op: op.clone(),
                 src,
                 dest,
-                ty: ty.clone(),
+                ty: *ty,
             }
         }
         Instruction::Idiv(op, ty) => {
             let op = replace_operand(op, state, symbol_table);
-            Instruction::Idiv(op, ty.clone())
+            Instruction::Idiv(op, *ty)
         }
-        Instruction::Cdq(ty) => Instruction::Cdq(ty.clone()),
+        Instruction::Div(op, ty) => {
+            let op = replace_operand(op, state, symbol_table);
+            Instruction::Div(op, *ty)
+        }
+        Instruction::Cdq(ty) => Instruction::Cdq(*ty),
         Instruction::Cmp(first, second, ty) => {
             let first = replace_operand(first, state, symbol_table);
             let second = replace_operand(second, state, symbol_table);
-            Instruction::Cmp(first, second, ty.clone())
+            Instruction::Cmp(first, second, *ty)
         }
         Instruction::Jmp { label } => Instruction::Jmp {
             label: label.clone(),

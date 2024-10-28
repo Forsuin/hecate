@@ -131,8 +131,8 @@ pub fn get_common_type(first: Type, second: Type) -> Type {
 
 pub fn is_signed(ty: &Type) -> bool {
     match ty {
-        Type::Int | Type::Long => false,
-        Type::UInt | Type::ULong => true,
+        Type::Int | Type::Long => true,
+        Type::UInt | Type::ULong => false,
         Type::Func(_) => {
             panic!("Internal Error: Function types don't have signedness")
         }
@@ -156,5 +156,14 @@ pub fn get_alignment(ty: &Type) -> i32 {
         Type::Func(_) => {
             panic!("Internal Error: Function types don't have an alignment")
         }
+    }
+}
+
+pub fn get_constant_type(constant: &Constant) -> Type {
+    match constant {
+        Constant::Int(_) => Type::Int,
+        Constant::UInt(_) => Type::UInt,
+        Constant::Long(_) => Type::Long,
+        Constant::ULong(_) => Type::ULong,
     }
 }

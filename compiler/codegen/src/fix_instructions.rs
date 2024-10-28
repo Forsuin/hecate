@@ -142,6 +142,32 @@ fn fix_instructions(instructions: &Vec<Instruction>) -> Vec<Instruction> {
                     ty: AssemblyType::Quad,
                 },
             ]),
+            // rewrite MovZeroExtend as either 1 or 2 Mov instructions
+            Instruction::MovZeroExtend {
+                src, dest
+            } => {
+                if let Operand::Register(_) = dest {
+                    fixed_instr.push(Instruction::Mov {
+                        src: src.clone(),
+                        dest: dest.clone(),
+                        ty: AssemblyType::Long,
+                    })
+                }
+                else {
+                    fixed_instr.append(&mut vec![
+                        Instruction::Mov {
+                            src: src.clone(),
+                            dest: Operand::Register(Register::R11),
+                            ty: AssemblyType::Long,
+                        },
+                        Instruction::Mov {
+                            src: Operand::Register(Register::R11),
+                            dest: dest.clone(),
+                            ty: AssemblyType::Quad,
+                        }
+                    ])
+                }
+            }
             // Add/Sub/And/Or/Xor can't take large immediates as source operands
             Instruction::Binary {
                 op:
@@ -269,11 +295,23 @@ fn fix_instructions(instructions: &Vec<Instruction>) -> Vec<Instruction> {
                 fixed_instr.push(Instruction::Mov {
                     src: Operand::Imm(*val),
                     dest: Operand::Register(Register::R10),
-                    ty: ty.clone(),
+                    ty: *ty,
                 });
                 fixed_instr.push(Instruction::Idiv(
                     Operand::Register(Register::R10),
-                    ty.clone(),
+                    *ty,
+                ));
+            }
+            // Div can't operate on constants
+            Instruction::Div(Operand::Imm(val), ty) => {
+                fixed_instr.push(Instruction::Mov {
+                    src: Operand::Imm(*val),
+                    dest: Operand::Register(Register::R10),
+                    ty: *ty,
+                });
+                fixed_instr.push(Instruction::Div(
+                    Operand::Register(Register::R10),
+                    *ty,
                 ));
             }
             // both cmp operands can't be in memory

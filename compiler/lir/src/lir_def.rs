@@ -45,6 +45,10 @@ pub enum Instruction {
         src: Operand,
         dest: Operand,
     },
+    MovZeroExtend {
+        src: Operand,
+        dest: Operand,
+    },
     Unary {
         op: UnaryOp,
         dest: Operand,
@@ -58,6 +62,7 @@ pub enum Instruction {
     },
     Cmp(Operand, Operand, AssemblyType),
     Idiv(Operand, AssemblyType),
+    Div(Operand, AssemblyType),
     Jmp {
         label: String,
     },
@@ -92,6 +97,8 @@ pub enum BinaryOp {
     Xor,
     Sal,
     Sar,
+    Shl, // signed left shift
+    Shr, // signed right shift
 }
 
 #[derive(Debug, Clone)]
@@ -125,4 +132,8 @@ pub enum Condition {
     GE,
     L,
     LE,
+    A,
+    AE,
+    B,
+    BE,
 }

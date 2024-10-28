@@ -10,7 +10,16 @@ pub fn output(path: &str, assm: Program, symbols: &SymbolTable) -> IOResult {
     let output = File::create(path)?;
     let mut writer = BufWriter::new(output);
 
-    for decl in &assm.decls {
+    let (vars, funcs): (Vec<_>, Vec<_>) = assm.decls.iter().partition(|decl| match decl {
+        Decl::Func(_) => false,
+        Decl::StaticVar(_) => true,
+    });
+
+    for var in vars {
+        emit_decl(&mut writer, var, symbols)?
+    }
+
+    for decl in funcs {
         emit_decl(&mut writer, decl, symbols)?;
     }
     emit_stack_note(&mut writer)?;
@@ -44,11 +53,27 @@ fn emit_static_var<W: Write>(writer: &mut W, var: &StaticVar) -> IOResult {
             writeln!(writer, "\t.data")?;
             format!("\t.long {}", i)
         }
+        StaticInit::UInt(0) => {
+            writeln!(writer, "\t.bss")?;
+            "\t.zero 4".to_string()
+        }
+        StaticInit::UInt(i) => {
+            writeln!(writer, "\t.data")?;
+            format!("\t.long {}", i)
+        }
         StaticInit::Long(0) => {
             writeln!(writer, "\t.bss")?;
             "\t.zero 8".to_string()
         }
         StaticInit::Long(i) => {
+            writeln!(writer, "\t.data")?;
+            format!("\t.quad {}", i)
+        }
+        StaticInit::ULong(0) => {
+            writeln!(writer, "\t.bss")?;
+            "\t.zero 8".to_string()
+        }
+        StaticInit::ULong(i) => {
             writeln!(writer, "\t.data")?;
             format!("\t.quad {}", i)
         }
@@ -78,7 +103,7 @@ fn emit_func<W: Write>(writer: &mut W, func: &Func, symbols: &SymbolTable) -> IO
 
     // extra line to seperate functions for easier reading
     writeln!(writer)?;
-    
+
     Ok(())
 }
 
@@ -146,6 +171,9 @@ fn emit_instruction<W: Write>(
         Instruction::Idiv(op, ty) => {
             writeln!(writer, "\tidiv{} {}", show_type(ty), show_operand(op, *ty))?;
         }
+        Instruction::Div(op, ty) => {
+            writeln!(writer, "\tdiv{} {}", show_type(ty), show_operand(op, *ty))?;
+        }
         Instruction::Cdq(AssemblyType::Long) => {
             writeln!(writer, "\tcdq")?;
         }
@@ -184,6 +212,9 @@ fn emit_instruction<W: Write>(
         Instruction::Call(func) => {
             writeln!(writer, "\tcall {}", show_fun_name(func, symbols))?;
         }
+        Instruction::MovZeroExtend { .. } => unreachable!(
+            "Internal Error: MovZeroExtend should have been removed in instruction fixup pass"
+        ),
     }
 
     Ok(())
@@ -191,13 +222,10 @@ fn emit_instruction<W: Write>(
 
 fn show_type(ty: &AssemblyType) -> String {
     (match ty {
-            AssemblyType::Long => {
-                "l"
-            }
-            AssemblyType::Quad => {
-                "q"
-            }
-        }).to_string()
+        AssemblyType::Long => "l",
+        AssemblyType::Quad => "q",
+    })
+    .to_string()
 }
 
 fn show_fun_name(name: &String, symbols: &SymbolTable) -> String {
@@ -225,6 +253,8 @@ fn show_binary(op: &BinaryOp) -> String {
         BinaryOp::Xor => "xor".to_string(),
         BinaryOp::Sal => "sal".to_string(),
         BinaryOp::Sar => "sar".to_string(),
+        BinaryOp::Shl => "shl".to_string(),
+        BinaryOp::Shr => "shr".to_string(),
     }
 }
 
@@ -257,7 +287,6 @@ fn show_reg(reg: &Register) -> String {
             Register::R10 => "r10d",
             Register::R11 => "r11d",
             Register::SP => unreachable!("Internal Error: No 32-bit RSP"),
-            
         }
     )
 }
@@ -275,7 +304,7 @@ fn show_quad_reg(reg: &Register) -> String {
             Register::R9 => "r9",
             Register::R10 => "r10",
             Register::R11 => "r11",
-            Register::SP => "rsp"
+            Register::SP => "rsp",
         }
     )
 }
@@ -289,11 +318,9 @@ fn show_byte_operand(op: &Operand) -> String {
 
 fn show_operand(op: &Operand, ty: AssemblyType) -> String {
     match op {
-        Operand::Register(reg) => {
-            match ty {
-                AssemblyType::Long => show_reg(reg),
-                AssemblyType::Quad => show_quad_reg(reg),
-            }
+        Operand::Register(reg) => match ty {
+            AssemblyType::Long => show_reg(reg),
+            AssemblyType::Quad => show_quad_reg(reg),
         },
         Operand::Stack(amt) => format!("{}(%rbp)", amt),
         Operand::Imm(val) => format!("${}", val),
@@ -312,6 +339,10 @@ fn show_condition(cond: &Condition) -> String {
         Condition::GE => "ge".to_string(),
         Condition::L => "l".to_string(),
         Condition::LE => "le".to_string(),
+        Condition::A => "a".to_string(),
+        Condition::AE => "ae".to_string(),
+        Condition::B => "b".to_string(),
+        Condition::BE => "be".to_string(),
     }
 }
 

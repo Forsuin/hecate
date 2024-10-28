@@ -2,7 +2,7 @@ use lir::symbol_table::AsmTable;
 use lir::*;
 use mir::tacky;
 use mir::tacky::Val;
-use ty::{get_alignment, IdentifierAttr, Symbol, SymbolTable, Type};
+use ty::{get_alignment, get_constant_type, is_signed, IdentifierAttr, Symbol, SymbolTable, Type};
 
 use crate::fix_instructions::fix_invalid_instructions;
 use crate::replace_pseudoregisters::replace_psuedos;
@@ -179,29 +179,54 @@ fn gen_instructions(
                 dest,
             } => {
                 if matches!(op, tacky::BinaryOp::Divide | tacky::BinaryOp::Modulo) {
-                    assm_instr.push(Instruction::Mov {
-                        src: gen_operand(first),
-                        dest: Operand::Register(Register::AX),
-                        ty: get_assm_type(first, symbols),
-                    });
-                    assm_instr.push(Instruction::Cdq(get_assm_type(first, symbols)));
-                    assm_instr.push(Instruction::Idiv(
-                        gen_operand(second),
-                        get_assm_type(first, symbols),
-                    ));
-                    assm_instr.push(Instruction::Mov {
-                        src: Operand::Register(if *op == tacky::BinaryOp::Divide {
-                            Register::AX
-                        } else {
-                            Register::DX
-                        }),
-                        dest: gen_operand(dest),
-                        ty: get_assm_type(first, symbols),
-                    })
+                    let result_reg = if *op == tacky::BinaryOp::Divide {
+                        Register::AX
+                    } else {
+                        Register::DX
+                    };
+
+                    if is_signed(&tacky_type(first.clone(), symbols)) {
+                        assm_instr.append(&mut vec![
+                            Instruction::Mov {
+                                src: gen_operand(first),
+                                dest: Operand::Register(Register::AX),
+                                ty: get_assm_type(first, symbols),
+                            },
+                            Instruction::Cdq(get_assm_type(first, symbols)),
+                            Instruction::Idiv(gen_operand(second), get_assm_type(first, symbols)),
+                            Instruction::Mov {
+                                src: Operand::Register(result_reg),
+                                dest: gen_operand(dest),
+                                ty: get_assm_type(first, symbols),
+                            },
+                        ]);
+                    } else {
+                        assm_instr.append(&mut vec![
+                            Instruction::Mov {
+                                src: gen_operand(first),
+                                dest: Operand::Register(Register::AX),
+                                ty: get_assm_type(first, symbols),
+                            },
+                            Instruction::Mov {
+                                src: Operand::Imm(0),
+                                dest: Operand::Register(Register::DX),
+                                ty: get_assm_type(first, symbols),
+                            },
+                            Instruction::Div(gen_operand(second), get_assm_type(first, symbols)),
+                            Instruction::Mov {
+                                src: Operand::Register(result_reg),
+                                dest: gen_operand(dest),
+                                ty: get_assm_type(first, symbols),
+                            },
+                        ])
+                    }
                 } else if matches!(
                     op,
                     tacky::BinaryOp::BitshiftLeft | tacky::BinaryOp::BitshiftRight
                 ) {
+                    let is_signed = is_signed(&tacky_type(first.clone(), symbols));
+                    let op = gen_bitshift_binary(op, is_signed);
+                    
                     match second {
                         Val::Constant(_) => {
                             assm_instr.push(Instruction::Mov {
@@ -210,7 +235,7 @@ fn gen_instructions(
                                 ty: get_assm_type(first, symbols),
                             });
                             assm_instr.push(Instruction::Binary {
-                                op: gen_binary(op),
+                                op,
                                 src: gen_operand(second),
                                 dest: gen_operand(dest),
                                 ty: get_assm_type(first, symbols),
@@ -228,7 +253,7 @@ fn gen_instructions(
                                 ty: get_assm_type(first, symbols),
                             });
                             assm_instr.push(Instruction::Binary {
-                                op: gen_binary(op),
+                                op: op,
                                 src: Operand::Register(Register::CX),
                                 dest: gen_operand(dest),
                                 ty: get_assm_type(first, symbols),
@@ -239,6 +264,8 @@ fn gen_instructions(
                     op,
                     tb!(Equal | NotEqual | Less | LessEqual | Greater | GreaterEqual)
                 ) {
+                    let signed = is_signed(&tacky_type(first.clone(), symbols));
+
                     assm_instr.push(Instruction::Cmp(
                         gen_operand(second),
                         gen_operand(first),
@@ -250,7 +277,7 @@ fn gen_instructions(
                         ty: get_assm_type(dest, symbols),
                     });
                     assm_instr.push(Instruction::SetCond {
-                        condition: gen_cond(op),
+                        condition: gen_cond(op, signed),
                         dest: gen_operand(dest),
                     });
                 } else {
@@ -339,7 +366,7 @@ fn gen_instructions(
                 // Pass args on stack
                 for param in stack_params.iter().rev() {
                     let arg = gen_operand(param);
-                    
+
                     if matches!(arg, Operand::Register(_) | Operand::Imm(_)) {
                         assm_instr.push(Instruction::Push(arg));
                     } else {
@@ -383,6 +410,12 @@ fn gen_instructions(
                 src: gen_operand(src),
                 dest: gen_operand(dest),
             }),
+            tacky::Instruction::ZeroExtend { src, dest } => {
+                assm_instr.push(Instruction::MovZeroExtend {
+                    src: gen_operand(src),
+                    dest: gen_operand(dest),
+                })
+            }
             tacky::Instruction::Truncate { src, dest } => assm_instr.push(Instruction::Mov {
                 src: gen_operand(src),
                 dest: gen_operand(dest),
@@ -396,8 +429,12 @@ fn gen_instructions(
 
 fn get_assm_type(val: &Val, symbols: &SymbolTable) -> AssemblyType {
     match val {
-        Val::Constant(ty::Constant::Long(_)) => AssemblyType::Quad,
-        Val::Constant(ty::Constant::Int(_)) => AssemblyType::Long,
+        Val::Constant(ty::Constant::Long(_)) | Val::Constant(ty::Constant::ULong(_)) => {
+            AssemblyType::Quad
+        }
+        Val::Constant(ty::Constant::Int(_)) | Val::Constant(ty::Constant::UInt(_)) => {
+            AssemblyType::Long
+        }
         Val::Var(v) => {
             let t = match symbols.get(v) {
                 None => {
@@ -413,11 +450,23 @@ fn get_assm_type(val: &Val, symbols: &SymbolTable) -> AssemblyType {
 
 fn convert_type(ty: Type) -> AssemblyType {
     match ty {
-        Type::Int => AssemblyType::Long,
-        Type::Long => AssemblyType::Quad,
+        Type::Int | Type::UInt => AssemblyType::Long,
+        Type::Long | Type::ULong => AssemblyType::Quad,
         Type::Func(_) => {
             panic!("Internal Error: Tried to convert function type into assembly type")
         }
+    }
+}
+
+fn tacky_type(val: Val, symbols: &SymbolTable) -> Type {
+    match val {
+        Val::Constant(c) => get_constant_type(&c),
+        Val::Var(v) => match symbols.get(&v) {
+            Some(symbol) => symbol.t.clone(),
+            None => {
+                panic!("Internal Error: Unable to find value's type, {v} not in symbol table")
+            }
+        },
     }
 }
 
@@ -440,28 +489,60 @@ fn gen_binary(operator: &tacky::BinaryOp) -> BinaryOp {
         tacky::BinaryOp::BitwiseAnd => BinaryOp::And,
         tacky::BinaryOp::BitwiseOr => BinaryOp::Or,
         tacky::BinaryOp::BitwiseXor => BinaryOp::Xor,
-        tacky::BinaryOp::BitshiftLeft => BinaryOp::Sal,
-        tacky::BinaryOp::BitshiftRight => BinaryOp::Sar,
         _ => panic!("Unable to convert {:#?} into assembly BinaryOp", operator),
+    }
+}
+
+fn gen_bitshift_binary(operator: &tacky::BinaryOp, signed: bool) -> BinaryOp {
+    match operator {
+        tacky::BinaryOp::BitshiftLeft => if signed { BinaryOp::Sal } else { BinaryOp::Shl },
+        tacky::BinaryOp::BitshiftRight => if signed { BinaryOp::Sar } else { BinaryOp::Shr },
+        _ => panic!("{:?} is not a bitshift operator", operator)
     }
 }
 
 fn gen_operand(operand: &Val) -> Operand {
     match operand {
         Val::Constant(ty::Constant::Int(val)) => Operand::Imm(*val as i64),
+        Val::Constant(ty::Constant::UInt(val)) => Operand::Imm(*val as i64),
         Val::Constant(ty::Constant::Long(val)) => Operand::Imm(*val),
+        Val::Constant(ty::Constant::ULong(val)) => Operand::Imm(*val as i64),
         Val::Var(var) => Operand::Pseudo(var.clone()),
     }
 }
 
-fn gen_cond(op: &tacky::BinaryOp) -> Condition {
+fn gen_cond(op: &tacky::BinaryOp, signed: bool) -> Condition {
     match op {
         tacky::BinaryOp::Equal => Condition::E,
         tacky::BinaryOp::NotEqual => Condition::NE,
-        tacky::BinaryOp::Less => Condition::L,
-        tacky::BinaryOp::LessEqual => Condition::LE,
-        tacky::BinaryOp::Greater => Condition::G,
-        tacky::BinaryOp::GreaterEqual => Condition::GE,
+        tacky::BinaryOp::Less => {
+            if signed {
+                Condition::L
+            } else {
+                Condition::B
+            }
+        }
+        tacky::BinaryOp::LessEqual => {
+            if signed {
+                Condition::LE
+            } else {
+                Condition::BE
+            }
+        }
+        tacky::BinaryOp::Greater => {
+            if signed {
+                Condition::G
+            } else {
+                Condition::A
+            }
+        }
+        tacky::BinaryOp::GreaterEqual => {
+            if signed {
+                Condition::GE
+            } else {
+                Condition::AE
+            }
+        }
         _ => panic!("Internal Error: Not a condition operator: {:?}", op),
     }
 }
