@@ -151,7 +151,7 @@ fn analyze_case(
         .expect("Found case statement outside of switch");
 
     // convert case to type of switch statement
-    let key = key.map(|c| const_convert(case_map.clone().unwrap().ty, c.clone()));
+    let key = key.map(|c| const_convert(&case_map.clone().unwrap().ty, c.clone()));
 
     // check for duplicate cases
     if case_map.as_mut().unwrap().map.contains_key(&key) {

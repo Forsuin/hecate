@@ -8,3 +8,4 @@ thiserror = "1.0.63"
 lexer = { path = "../lexer" }
 ast = { path = "../ast" }
 ty = { path = "../ty" }
+itertools = "0.13.0"
