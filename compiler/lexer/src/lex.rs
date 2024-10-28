@@ -61,12 +61,14 @@ pub enum TokenValue {
     None,
     Integer(i32),
     Long(i64),
+    UnsignedInt(u32),
+    UnsignedLong(u64),
     String(String),
     Ident(String),
     Error(LexError),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum TokenType {
     // Single-character tokens
     OpenParen,
@@ -120,6 +122,8 @@ pub enum TokenType {
     // Keywords
     Int,
     Long,
+    Signed,
+    Unsigned,
     If,
     Else,
     Void,
@@ -149,6 +153,8 @@ const EOF: char = '\0';
 enum ConstType {
     Int,
     Long,
+    UnsignedInt,
+    UnsignedLong,
 }
 
 pub struct Lexer<'a> {
@@ -374,10 +380,10 @@ impl<'a> Lexer<'a> {
     }
 
     fn convert_constant_value(&mut self, source: &str) -> Result<TokenValue, LexError> {
-        let suffix = source.trim_start_matches(|c| char::is_numeric(c));
+        let suffix = source.trim_start_matches(char::is_numeric);
         // get just prefix, if no suffix to strip, just use source
         let prefix = source
-            .strip_suffix(|c| char::is_alphabetic(c))
+            .strip_suffix(suffix)
             .unwrap_or(source);
 
         // check if constant ends with suffix
@@ -400,6 +406,21 @@ impl<'a> Lexer<'a> {
                 }
             }
             ConstType::Long => TokenValue::Long(prefix.parse::<i64>().unwrap()),
+            ConstType::UnsignedInt => {
+                // try to parse as an uint, but automatically convert to long if too big
+                match prefix.parse::<u32>() {
+                    Ok(val) => TokenValue::UnsignedInt(val),
+                    Err(_) => match prefix.parse::<u64>() {
+                        Ok(val) => TokenValue::UnsignedLong(val),
+                        Err(_) => {
+                            return Err(LexError::OutOfRange(source.to_string()));
+                        }
+                    },
+                }
+            }
+            ConstType::UnsignedLong => {
+                TokenValue::UnsignedLong(prefix.parse::<u64>().unwrap())
+            }
         })
     }
 
@@ -407,6 +428,8 @@ impl<'a> Lexer<'a> {
         match source {
             "" => Ok(ConstType::Int),
             "l" | "L" | "ll" | "LL" => Ok(ConstType::Long),
+            "u" | "U"  => Ok(ConstType::UnsignedInt),
+            "ul" | "UL" | "lu" | "LU" => Ok(ConstType::UnsignedLong),
             suffix => Err(LexError::InvalidSuffix(suffix.to_string())),
         }
     }
@@ -420,7 +443,7 @@ impl<'a> Lexer<'a> {
         loop {
             match self.peek() {
                 // suffixes are ok
-                'l' | 'L' => {
+                'l' | 'L' | 'u' | 'U' => {
                     self.advance();
                 }
                 // other identifier characters are not ok
@@ -445,6 +468,8 @@ impl<'a> Lexer<'a> {
         match text.as_str() {
             "int" => TokenType::Int,
             "long" => TokenType::Long,
+            "signed" => TokenType::Signed,
+            "unsigned" => TokenType::Unsigned,
             "if" => TokenType::If,
             "else" => TokenType::Else,
             "void" => TokenType::Void,
@@ -495,7 +520,7 @@ mod tests {
 
         assert_eq!(
             tokens
-                .filter(|t| t.kind == TokenType::MinusMinus)
+                .filter(|t| t.kind == MinusMinus)
                 .collect::<Vec<Token>>()
                 .len(),
             1
@@ -678,6 +703,54 @@ mod tests {
     fn extern_kw() {
         let src = "extern int x;";
         let expected = vec![Extern, Int, Identifier, Semicolon];
+
+        let mut lexer = Lexer::new(src);
+        let tokens = lexer.tokenize();
+        let tokens: Vec<_> = tokens.map(|t| t.kind).collect();
+
+        assert_eq!(tokens, expected)
+    }
+
+    #[test]
+    fn signed_kw() {
+        let src = "signed int x;";
+        let expected = vec![Signed, Int, Identifier, Semicolon];
+
+        let mut lexer = Lexer::new(src);
+        let tokens = lexer.tokenize();
+        let tokens: Vec<_> = tokens.map(|t| t.kind).collect();
+
+        assert_eq!(tokens, expected)
+    }
+
+    #[test]
+    fn unsigned_kw() {
+        let src = "unsigned int x;";
+        let expected = vec![Unsigned, Int, Identifier, Semicolon];
+
+        let mut lexer = Lexer::new(src);
+        let tokens = lexer.tokenize();
+        let tokens: Vec<_> = tokens.map(|t| t.kind).collect();
+
+        assert_eq!(tokens, expected)
+    }
+
+    #[test]
+    fn unsigned_int_literal() {
+        let src = "unsigned int x = 5u;";
+        let expected = vec![Unsigned, Int, Identifier, Equal, Constant, Semicolon];
+
+        let mut lexer = Lexer::new(src);
+        let tokens = lexer.tokenize();
+        let tokens: Vec<_> = tokens.map(|t| t.kind).collect();
+
+        assert_eq!(tokens, expected)
+    }
+
+    #[test]
+    fn unsigned_long_literal() {
+        let src = "unsigned long x = 5ul;";
+        let expected = vec![Unsigned, Long, Identifier, Equal, Constant, Semicolon];
 
         let mut lexer = Lexer::new(src);
         let tokens = lexer.tokenize();

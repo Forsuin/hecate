@@ -1,6 +1,6 @@
+use itertools::Itertools;
 use std::fmt::{Display, Formatter};
 use std::iter::Peekable;
-
 use thiserror::Error;
 
 use ast::ExprKind::{Assignment, CompoundAssignment, Conditional};
@@ -91,6 +91,8 @@ impl Parser {
             match_token_types!(
                 TokenType::Int,
                 TokenType::Long,
+                TokenType::Signed,
+                TokenType::Unsigned,
                 TokenType::Static,
                 TokenType::Extern
             ) => Ok(BlockItem::D(self.parse_decl()?)),
@@ -143,6 +145,8 @@ impl Parser {
                 match_token_types!(
                     TokenType::Int,
                     TokenType::Long,
+                    TokenType::Signed,
+                    TokenType::Unsigned,
                     TokenType::Static,
                     TokenType::Extern
                 ) => {
@@ -161,7 +165,7 @@ impl Parser {
     ) -> Result<(Type, Option<StorageClass>), ParseError> {
         let (types, storage_classes): (Vec<_>, Vec<_>) = specifiers
             .into_iter()
-            .partition(|spec| matches!(spec.kind, TokenType::Int | TokenType::Long));
+            .partition(|spec| matches!(spec.kind, TokenType::Int | TokenType::Long | TokenType::Unsigned | TokenType::Signed));
 
         if storage_classes.len() > 1 {
             return Err(ParseError::new(format!(
@@ -192,23 +196,30 @@ impl Parser {
     }
 
     fn parse_type(&self, types: Vec<TokenType>) -> Result<Type, ParseError> {
-        match types.as_slice() {
-            [TokenType::Int] => Ok(Type::Int),
-            [TokenType::Long]
-            | [TokenType::Int, TokenType::Long]
-            | [TokenType::Long, TokenType::Int] => Ok(Type::Long),
-            tokens => {
-                let invalid = tokens
-                    .iter()
-                    .map(|t| format!("{:?}", t))
-                    .collect::<Vec<String>>()
-                    .join(", ");
+        if types.is_empty() {
+            return Err(ParseError::new("Missing type specifier".to_string()));
+        }
 
-                Err(ParseError::new(format!(
-                    "Invalid type specifier(s): '{:?}'",
-                    invalid
-                )))
-            }
+        if types.len() != types.clone().into_iter().unique().collect::<Vec<_>>().len() {
+            return Err(ParseError::new(
+                "Type specifier contains multiples of the same type".to_string(),
+            ));
+        }
+
+        if types.contains(&TokenType::Signed) && types.contains(&TokenType::Unsigned) {
+            return Err(ParseError::new(
+                "Type specifier contains both signed and unsigned".to_string(),
+            ));
+        }
+
+        if types.contains(&TokenType::Unsigned) && types.contains(&TokenType::Long) {
+            Ok(Type::ULong)
+        } else if types.contains(&TokenType::Unsigned) {
+            Ok(Type::UInt)
+        } else if types.contains(&TokenType::Long) {
+            Ok(Type::Long)
+        } else {
+            Ok(Type::Int)
         }
     }
 
@@ -643,6 +654,8 @@ impl Parser {
             match_token_types!(
                 TokenType::Int,
                 TokenType::Long,
+                TokenType::Signed,
+                TokenType::Unsigned,
                 TokenType::Static,
                 TokenType::Extern
             ) => Ok(ForInit::Decl(self.parse_var_decl()?)),
@@ -856,6 +869,20 @@ impl Parser {
                     value: TokenValue::Long(value),
                     ..
                 } => Ok(Constant::Long(value)),
+                Token {
+                    kind: TokenType::Constant,
+                    value: TokenValue::UnsignedInt(val),
+                    ..
+                } => {
+                    Ok(Constant::UInt(val))
+                }
+                Token {
+                    kind: TokenType::Constant,
+                    value: TokenValue::UnsignedLong(val),
+                    ..
+                } => {
+                    Ok(Constant::ULong(val))
+                }
                 _ => Err(ParseError::new(format!(
                     "Expected constant, found '{:?} at ({}, {})'",
                     token.kind, token.line, token.col
@@ -1125,10 +1152,10 @@ fn get_compound(token_type: TokenType) -> Option<BinaryOp> {
 }
 
 fn is_type_specifier(kind: TokenType) -> bool {
-    match kind {
-        TokenType::Int | TokenType::Long => true,
-        _ => false,
-    }
+    matches!(
+        kind,
+        TokenType::Int | TokenType::Long | TokenType::Signed | TokenType::Unsigned
+    )
 }
 
 #[cfg(test)]
@@ -1166,8 +1193,14 @@ mod tests {
         ($expr:expr, i32) => {
             Expr::new(ExprKind::Constant(Constant::Int($expr)))
         };
+        ($expr:expr, u32) => {
+            Expr::new(ExprKind::Constant(Constant::UInt($expr)))
+        };
         ($expr:expr, i64) => {
             Expr::new(ExprKind::Constant(Constant::Long($expr)))
+        };
+        ($expr:expr, u64) => {
+            Expr::new(ExprKind::Constant(Constant::ULong($expr)))
         };
     }
 
@@ -1718,8 +1751,6 @@ mod tests {
 
         let ast = Parser::new(tokens).parse_decl().unwrap();
 
-        println!("{:#?}", ast);
-
         assert_eq!(
             ast,
             Decl::VarDecl(VarDecl {
@@ -1738,8 +1769,6 @@ mod tests {
 
         let ast = Parser::new(tokens).parse_decl().unwrap();
 
-        println!("{:#?}", ast);
-
         assert_eq!(
             ast,
             Decl::FuncDecl(FuncDecl {
@@ -1751,6 +1780,96 @@ mod tests {
                     param_types: vec![Type::Long, Type::Long, Type::Long],
                     return_type: Box::new(Type::Int)
                 })
+            })
+        )
+    }
+
+    #[test]
+    fn signed_int_keyword() {
+        let src = "signed int a = 100;";
+        let tokens = Lexer::new(src).tokenize().collect();
+
+        let ast = Parser::new(tokens).parse_decl().unwrap();
+
+        assert_eq!(
+            ast,
+            Decl::VarDecl(VarDecl {
+                name: "a".to_string(),
+                init: Some(constant!(100, i32)),
+                storage_class: None,
+                var_type: Type::Int,
+            })
+        )
+    }
+
+    #[test]
+    fn unsigned_int() {
+        let src = "unsigned int a = 100u;";
+        let tokens = Lexer::new(src).tokenize().collect();
+
+        let ast = Parser::new(tokens).parse_decl().unwrap();
+
+        assert_eq!(
+            ast,
+            Decl::VarDecl(VarDecl {
+                name: "a".to_string(),
+                init: Some(constant!(100, u32)),
+                storage_class: None,
+                var_type: Type::UInt,
+            })
+        )
+    }
+
+    #[test]
+    fn unsigned_int_reverse_order() {
+        let src = "int unsigned a = 100U;";
+        let tokens = Lexer::new(src).tokenize().collect();
+
+        let ast = Parser::new(tokens).parse_decl().unwrap();
+
+        assert_eq!(
+            ast,
+            Decl::VarDecl(VarDecl {
+                name: "a".to_string(),
+                init: Some(constant!(100, u32)),
+                storage_class: None,
+                var_type: Type::UInt,
+            })
+        )
+    }
+
+    #[test]
+    fn signed_long_keyword() {
+        let src = "signed long a = 100l;";
+        let tokens = Lexer::new(src).tokenize().collect();
+
+        let ast = Parser::new(tokens).parse_decl().unwrap();
+
+        assert_eq!(
+            ast,
+            Decl::VarDecl(VarDecl {
+                name: "a".to_string(),
+                init: Some(constant!(100, i64)),
+                storage_class: None,
+                var_type: Type::Long,
+            })
+        )
+    }
+
+    #[test]
+    fn unsigned_long() {
+        let src = "unsigned long a = 100ul;";
+        let tokens = Lexer::new(src).tokenize().collect();
+
+        let ast = Parser::new(tokens).parse_decl().unwrap();
+
+        assert_eq!(
+            ast,
+            Decl::VarDecl(VarDecl {
+                name: "a".to_string(),
+                init: Some(constant!(100, u64)),
+                storage_class: None,
+                var_type: Type::ULong,
             })
         )
     }

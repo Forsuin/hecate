@@ -54,7 +54,10 @@ impl TypeChecker {
                 }
 
                 if decl.t != var.var_type {
-                    return Err(SemErr::new(format!("Variable '{}' redeclared with a different type: '{:?}'", var.name, var.var_type)));
+                    return Err(SemErr::new(format!(
+                        "Variable '{}' redeclared with a different type: '{:?}'",
+                        var.name, var.var_type
+                    )));
                 }
 
                 match &decl.attrs {
@@ -146,10 +149,9 @@ impl TypeChecker {
         if let Some(body) = &mut decl.body {
             let (param_types, return_type) = match func_type {
                 Type::Func(FuncType {
-                               param_types, return_type 
-                           }) => {
-                    (param_types, return_type)
-                }
+                    param_types,
+                    return_type,
+                }) => (param_types, return_type),
                 _ => {
                     return Err(SemErr::new(format!(
                         "Internal Error: function '{}' has non-function type",
@@ -157,7 +159,7 @@ impl TypeChecker {
                     )));
                 }
             };
-            
+
             for (param_name, param_type) in zip(decl.params.clone(), param_types) {
                 self.symbols.add_automatic_var(param_name, param_type);
             }
@@ -235,6 +237,8 @@ impl TypeChecker {
                 let zero_init = InitialVal::Initial(match &var.var_type {
                     Type::Int => StaticInit::Int(0),
                     Type::Long => StaticInit::Long(0),
+                    Type::UInt => StaticInit::UInt(0),
+                    Type::ULong => StaticInit::ULong(0),
                     Type::Func(_) => {
                         return Err(SemErr::new(format!(
                             "Internal Error: Attempted to static init function '{}'",
@@ -348,7 +352,11 @@ impl TypeChecker {
                 self.check_expr(control)?;
                 self.check_stmt(body, return_type)?;
             }
-            Stmt::Case { constant, body, label: _, } => {
+            Stmt::Case {
+                constant,
+                body,
+                label: _,
+            } => {
                 self.check_expr(constant)?;
                 self.check_stmt(body, return_type)?;
             }
@@ -367,14 +375,14 @@ impl TypeChecker {
                 let var_type = &self.symbols.get(var).unwrap().t;
 
                 match var_type {
-                    ty @ Type::Int | ty @ Type::Long => {
-                        expr.set_type(ty.clone());
-                    }
                     Type::Func(_) => {
                         return Err(SemErr::new(format!(
                             "Tried to use function '{}' as a variable",
                             var
                         )));
+                    }
+                    _ => {
+                        expr.set_type(var_type.clone());
                     }
                 }
             }
@@ -388,7 +396,7 @@ impl TypeChecker {
                     _ => {
                         let body_type = body.get_type().unwrap();
                         expr.set_type(body_type)
-                    },
+                    }
                 }
             }
             ExprKind::Binary { op, left, right } => {
@@ -508,12 +516,6 @@ impl TypeChecker {
                 let func_type = self.symbols.get(func).unwrap().t.clone();
 
                 match func_type {
-                    Type::Int | Type::Long => {
-                        return Err(SemErr::new(format!(
-                            "Tried to use variable '{}' as function",
-                            func
-                        )))
-                    }
                     Type::Func(func_type) => {
                         if func_type.param_types.len() != args.len() {
                             return Err(SemErr::new(format!(
@@ -533,6 +535,12 @@ impl TypeChecker {
 
                         expr.set_type(*func_type.return_type)
                     }
+                    _ => {
+                        return Err(SemErr::new(format!(
+                            "Tried to use variable '{}' as function",
+                            func
+                        )))
+                    }
                 }
             }
             ExprKind::Constant(c) => match c {
@@ -542,8 +550,17 @@ impl TypeChecker {
                 Constant::Long(_) => {
                     expr.set_type(Type::Long);
                 }
+                Constant::UInt(_) => {
+                    expr.set_type(Type::UInt)
+                }
+                Constant::ULong(_) => {
+                    expr.set_type(Type::ULong)
+                }
             },
-            ExprKind::Cast { target_type, expr: inner_expr } => {
+            ExprKind::Cast {
+                target_type,
+                expr: inner_expr,
+            } => {
                 self.check_expr(inner_expr)?;
                 let target_type = target_type.clone();
                 expr.set_type(target_type);
@@ -568,12 +585,16 @@ fn convert_to(expr: &Expr, target_type: Type) -> Expr {
 fn to_static_init(var_type: Type, init: Expr) -> SemanticResult<InitialVal> {
     match init.kind {
         ExprKind::Constant(val) => {
-            let init_val = match const_convert(var_type, val) {
+            let init_val = match const_convert(&var_type, val) {
                 Constant::Int(val) => StaticInit::Int(val),
                 Constant::Long(val) => StaticInit::Long(val),
+                Constant::UInt(val) => StaticInit::UInt(val),
+                Constant::ULong(val) => StaticInit::ULong(val),
             };
             Ok(InitialVal::Initial(init_val))
         }
-        _ => Err(SemErr::new("Non-constant initializer on static variable".to_string())),
+        _ => Err(SemErr::new(
+            "Non-constant initializer on static variable".to_string(),
+        )),
     }
 }

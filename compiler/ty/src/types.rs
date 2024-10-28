@@ -4,6 +4,8 @@ use std::fmt::{Display, Formatter};
 pub enum Type {
     Int,
     Long,
+    UInt,
+    ULong,
     Func(FuncType),
 }
 
@@ -15,6 +17,8 @@ impl Display for Type {
             match self {
                 Type::Int => "int",
                 Type::Long => "long",
+                Type::UInt => "unsigned int",
+                Type::ULong => "unsigned long",
                 Type::Func(_) => "function",
             }
         )
@@ -38,6 +42,8 @@ pub enum InitialVal {
 pub enum StaticInit {
     Int(i32),
     Long(i64),
+    UInt(u32),
+    ULong(u64),
 }
 
 impl Display for StaticInit {
@@ -47,6 +53,12 @@ impl Display for StaticInit {
                 write!(f, "{}", i)
             }
             StaticInit::Long(i) => {
+                write!(f, "{}", i)
+            }
+            StaticInit::UInt(i) => {
+                write!(f, "{}", i)
+            }
+            StaticInit::ULong(i) => {
                 write!(f, "{}", i)
             }
         }
@@ -76,7 +88,9 @@ pub struct Symbol {
 #[derive(Debug, Eq, PartialEq, Clone, Hash)]
 pub enum Constant {
     Int(i32),
+    UInt(u32),
     Long(i64),
+    ULong(u64),
 }
 
 impl Display for Constant {
@@ -88,30 +102,57 @@ impl Display for Constant {
             Constant::Long(val) => {
                 write!(f, "{}", val)
             }
+
+            Constant::UInt(val) => {
+                write!(f, "{}", val)
+            }
+            Constant::ULong(val) => {
+                write!(f, "{}", val)
+            }
         }
     }
 }
 
 pub fn get_common_type(first: Type, second: Type) -> Type {
     if first == second {
+        return first;
+    }
+
+    if get_size(&first) == get_size(&second) {
+        return if is_signed(&first) { second } else { first };
+    }
+
+    if get_size(&first) > get_size(&second) {
         first
     } else {
-        Type::Long
+        second
     }
 }
 
-pub fn const_convert(target_type: Type, constant: Constant) -> Constant {
-    match (target_type, constant.clone()) {
-        (Type::Long, Constant::Int(val)) => Constant::Long(val as i64),
-        (Type::Int, Constant::Long(val)) => Constant::Int(val as i32),
-        _ => constant,
+pub fn is_signed(ty: &Type) -> bool {
+    match ty {
+        Type::Int | Type::Long => false,
+        Type::UInt | Type::ULong => true,
+        Type::Func(_) => {
+            panic!("Internal Error: Function types don't have signedness")
+        }
+    }
+}
+
+pub fn get_size(ty: &Type) -> i32 {
+    match ty {
+        Type::Int | Type::UInt => 4,
+        Type::Long | Type::ULong => 8,
+        Type::Func(_) => {
+            panic!("Internal Error: Function types don't have a size")
+        }
     }
 }
 
 pub fn get_alignment(ty: &Type) -> i32 {
     match ty {
-        Type::Int => 4,
-        Type::Long => 8,
+        Type::Int | Type::UInt => 4,
+        Type::Long | Type::ULong => 8,
         Type::Func(_) => {
             panic!("Internal Error: Function types don't have an alignment")
         }
