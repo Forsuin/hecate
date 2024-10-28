@@ -1,5 +1,8 @@
 use ast::{BinaryOp, BlockItem, Decl, Expr, ExprKind, ForInit, Stmt, UnaryOp};
-use ty::{const_convert, Constant, IdentifierAttr, InitialVal, StaticInit, SymbolTable, Type};
+use ty::{
+    const_convert, get_size, is_signed, Constant, IdentifierAttr, InitialVal, StaticInit,
+    SymbolTable, Type,
+};
 use unique_ident::*;
 
 use crate::tacky;
@@ -38,6 +41,8 @@ fn tacky_symbol_table(symbols: &SymbolTable) -> Vec<tacky::Decl> {
                     init: match entry.t {
                         Type::Int => StaticInit::Int(0),
                         Type::Long => StaticInit::Long(0),
+                        Type::UInt => StaticInit::UInt(0),
+                        Type::ULong => StaticInit::ULong(0),
                         Type::Func(_) => unreachable!(
                             "Internal Error: Should never have function with a tentative value"
                         ),
@@ -518,9 +523,11 @@ fn tacky_expr(
 
             (instructions, Val::Var(v.clone()))
         }
-        ExprKind::CompoundAssignment { op, lvalue, expr: rhs } => {
-            tacky_compound_expression(*op, lvalue, rhs, expr.get_type().unwrap(), symbols)
-        }
+        ExprKind::CompoundAssignment {
+            op,
+            lvalue,
+            expr: rhs,
+        } => tacky_compound_expression(*op, lvalue, rhs, expr.get_type().unwrap(), symbols),
         ExprKind::PostfixInc(expr) => {
             let val = match &expr.kind {
                 ExprKind::Var(v) => Val::Var(v.clone()),
@@ -537,7 +544,7 @@ fn tacky_expr(
                 Instruction::Binary {
                     op: tacky_binop(BinaryOp::Add),
                     first: val.clone(),
-                    second: Val::Constant(make_constant(expr.get_type().unwrap(), 1)),
+                    second: Val::Constant(make_constant(&expr.get_type().unwrap(), 1)),
                     dest: val.clone(),
                 },
             ];
@@ -560,7 +567,7 @@ fn tacky_expr(
                 Instruction::Binary {
                     op: tacky_binop(BinaryOp::Subtract),
                     first: val.clone(),
-                    second: Val::Constant(make_constant(expr.get_type().unwrap(), 1)),
+                    second: Val::Constant(make_constant(&expr.get_type().unwrap(), 1)),
                     dest: val.clone(),
                 },
             ];
@@ -635,18 +642,17 @@ fn tacky_expr(
             expr: inner,
         } => {
             let (mut instructions, result) = tacky_expr(inner, symbols);
+            let inner_type = inner.get_type().unwrap();
 
-            let src_type = inner.get_type().unwrap();
-
-            if src_type == *target_type {
+            if inner_type == *target_type {
                 (instructions, result)
             } else {
                 let dest_name = tacky_temp(target_type.clone(), symbols);
-                //symbols.add_automatic_var(dest_name.clone(), target_type.clone());
-
                 let dest = Val::Var(dest_name);
 
-                let cast_instructions = tacky_cast(result, dest.clone(), target_type.clone());
+                let cast_instructions =
+                    get_cast_instruction(result.clone(), dest.clone(), &inner_type, target_type);
+
                 instructions.push(cast_instructions);
                 (instructions, dest)
             }
@@ -654,14 +660,9 @@ fn tacky_expr(
     }
 }
 
-fn make_constant(ty: Type, i: i32) -> Constant {
-    match ty {
-        Type::Int => Constant::Int(i),
-        Type::Long => Constant::Long(i as i64),
-        Type::Func(_) => {
-            panic!("Internal Error: Can't make constant out of function type")
-        }
-    }
+fn make_constant(ty: &Type, i: i32) -> Constant {
+    let as_int = Constant::Int(i);
+    const_convert(ty, as_int)
 }
 
 fn tacky_temp(var_type: Type, symbols: &mut SymbolTable) -> String {
@@ -670,11 +671,15 @@ fn tacky_temp(var_type: Type, symbols: &mut SymbolTable) -> String {
     name
 }
 
-fn tacky_cast(src: Val, dest: Val, dest_type: Type) -> Instruction {
-    match dest_type {
-        Type::Int => Instruction::Truncate { src, dest },
-        Type::Long => Instruction::SignExtend { src, dest },
-        Type::Func(_) => panic!("Internal Error: cast to function type"),
+fn get_cast_instruction(src: Val, dest: Val, inner_type: &Type, target_type: &Type) -> Instruction {
+    if get_size(target_type) == get_size(&inner_type) {
+        Instruction::Copy { src, dest }
+    } else if get_size(target_type) < get_size(&inner_type) {
+        Instruction::Truncate { src, dest }
+    } else if is_signed(&inner_type) {
+        Instruction::SignExtend { src, dest }
+    } else {
+        Instruction::ZeroExtend { src, dest }
     }
 }
 
@@ -724,7 +729,7 @@ fn tacky_compound_expression(
     symbols: &mut SymbolTable,
 ) -> (Vec<Instruction>, Val) {
     println!("{:#?}", lvalue);
-    
+
     let dest = match &lvalue.kind {
         ExprKind::Var(v) => Val::Var(v.clone()),
         _ => unreachable!("Assignment lvalue should always be a Var"),
@@ -749,7 +754,8 @@ fn tacky_compound_expression(
         // lhs (lhs.type) tmp
 
         let temp = Val::Var(tacky_temp(result_type.clone(), symbols));
-        let cast_lhs_to_temp = tacky_cast(dest.clone(), temp.clone(), result_type.clone());
+        let cast_lhs_to_temp =
+            get_cast_instruction(dest.clone(), temp.clone(), &lvalue.get_type().unwrap(), &result_type);
         let bin_instr = Instruction::Binary {
             op: op.clone(),
             first: temp.clone(),
@@ -757,13 +763,14 @@ fn tacky_compound_expression(
             dest: temp.clone(),
         };
 
-        let cast_temp_to_lhs = tacky_cast(temp.clone(), dest.clone(), lvalue.get_type().unwrap());
+        let cast_temp_to_lhs =
+            get_cast_instruction(temp.clone(), dest.clone(), &result_type, &lvalue.get_type().unwrap());
 
         vec![cast_lhs_to_temp, bin_instr, cast_temp_to_lhs]
     };
-    
+
     instructions.append(&mut op_and_assignment);
-    
+
     (instructions, dest)
 }
 
@@ -774,7 +781,7 @@ fn tacky_switch(
     symbols: &mut SymbolTable,
 ) -> Vec<Instruction> {
     let cases = gather_cases(body);
-    
+
     let break_label = format!("break.{}", label);
     let (mut control_instr, control_val) = tacky_expr(control, symbols);
     let cmp_result = Val::Var(tacky_temp(control.get_type().unwrap(), symbols));
@@ -793,11 +800,12 @@ fn tacky_switch(
                     target: label.clone(),
                 },
             ]
-        },
+        }
         None => vec![],
     };
 
-    let mut tacky_case_jumps: Vec<Instruction> = cases.iter().flat_map(gen_tacky_case_jump).collect();
+    let mut tacky_case_jumps: Vec<Instruction> =
+        cases.iter().flat_map(gen_tacky_case_jump).collect();
 
     let mut tacky_default_jump = if cases.iter().any(|(key, _)| key.is_none()) {
         let default_id = cases
@@ -809,11 +817,11 @@ fn tacky_switch(
     } else {
         vec![]
     };
-    
+
     control_instr.append(&mut tacky_case_jumps);
     control_instr.append(&mut tacky_default_jump);
     control_instr.push(Instruction::Jump {
-        target: break_label.clone()
+        target: break_label.clone(),
     });
     control_instr.append(&mut tacky_stmt(body, symbols));
     control_instr.push(Instruction::Label(break_label));
@@ -832,7 +840,9 @@ fn gather_cases_helper(stmt: &Stmt, cases: &mut Vec<(Option<Constant>, String)>)
     match stmt {
         Stmt::Compound { block } => {
             for item in &block.items {
-                if let BlockItem::S(stmt) = item { gather_cases_helper(stmt, cases) }
+                if let BlockItem::S(stmt) = item {
+                    gather_cases_helper(stmt, cases)
+                }
             }
         }
         Stmt::If {
@@ -883,8 +893,8 @@ fn gather_cases_helper(stmt: &Stmt, cases: &mut Vec<(Option<Constant>, String)>)
             if let ExprKind::Constant(c) = &constant.kind {
                 // convert the constant values to the same type as enclosing switch's control expr
                 // switch_analysis stage handles typing cases before this
-                let constant = const_convert(constant.get_type().unwrap(), c.clone());
-                
+                let constant = const_convert(&constant.get_type().unwrap(), c.clone());
+
                 cases.push((Some(constant), label.clone()));
                 gather_cases_helper(body, cases);
             } else {

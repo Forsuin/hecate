@@ -139,6 +139,9 @@ fn print_instruction<W: Write>(writer: &mut W, instr: &Instruction) -> IOResult 
         Instruction::Truncate { src, dest } => {
             writeln!(writer, "\t{} = Truncate({})", format_val(src), format_val(dest))
         }
+        Instruction::ZeroExtend { src, dest } => {
+            writeln!(writer, "\t{} = ZeroExtend({})", format_val(src), format_val(dest))
+        }
     }
 }
 
@@ -151,6 +154,12 @@ fn format_val(val: &Val) -> String {
             format!("{}l", *i)
         }
         Val::Var(var) => var.clone(),
+        Val::Constant(Constant::UInt(i)) => {
+            format!("{}u", *i)
+        }
+        Val::Constant(Constant::ULong(i)) => {
+            format!("{}ul", *i)
+        }
     }
 }
 

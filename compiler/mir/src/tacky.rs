@@ -66,6 +66,10 @@ pub enum Instruction {
         src: Val,
         dest: Val,
     },
+    ZeroExtend {
+        src: Val,
+        dest: Val,
+    },
     Truncate {
         src: Val,
         dest: Val,
