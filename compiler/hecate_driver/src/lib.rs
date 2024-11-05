@@ -1,8 +1,7 @@
-use std::io::Write;
-use std::{fs::read_to_string, path::Path, process::Command};
-
 use anyhow::{Ok, Result};
 use clap::{Args, Parser as ClapParser};
+use std::io::Write;
+use std::{fs::read_to_string, path::Path, process::Command};
 use thiserror::Error;
 
 use codegen::gen_assm;
@@ -14,13 +13,16 @@ use semantic_analysis::{analyze_switches, label_loops, resolve, validate_labels,
 
 #[derive(ClapParser, Debug)]
 #[command(version, about, long_about = "Runs the Hecate C compiler")]
-struct CLI {
+struct Arguments {
     /// Path to C source file
     path: String,
 
     /// "Specifies a point in compilation process for Hecate to stop, only one(1) option can be specified at a time"
     #[command(flatten)]
     stage_options: StageOptions,
+
+    #[arg(short = 'l')]
+    link_lib: Option<String>,
 }
 
 /// Run C compiler with optional arguments
@@ -94,14 +96,24 @@ impl StopStage {
 }
 
 pub fn main() -> Result<()> {
-    let args = CLI::parse();
+    let args = Arguments::parse();
 
     let stop_stage = StopStage::from_args(&args.stage_options);
 
-    run_driver(&args.path, &stop_stage, args.stage_options.debug)
+    run_driver(
+        &args.path,
+        &stop_stage,
+        args.stage_options.debug,
+        args.link_lib,
+    )
 }
 
-fn run_driver(path: &str, stop_stage: &Option<StopStage>, debug: bool) -> Result<()> {
+fn run_driver(
+    path: &str,
+    stop_stage: &Option<StopStage>,
+    debug: bool,
+    link_lib: Option<String>,
+) -> Result<()> {
     let dir_path = Path::new(path);
 
     // source code should always be inside a directory, but better error handling can come later
@@ -161,6 +173,11 @@ fn run_driver(path: &str, stop_stage: &Option<StopStage>, debug: bool) -> Result
         .arg(&assembly_path)
         .arg("-o")
         .arg(&output)
+        .arg(if let Some(lib) = link_lib {
+            format!("-l{lib}")
+        } else {
+            "".into()
+        })
         .output()
         .expect("Failed to execute assembler and linker");
 
@@ -206,7 +223,6 @@ fn compile(path: &str, stop_stage: &Option<StopStage>, assm_path: &str, debug: b
 
     // println!("{:#?}", tokens);
 
-
     if let Some(StopStage::Lexer) = stop_stage {
         return Ok(());
     }
@@ -240,7 +256,7 @@ fn compile(path: &str, stop_stage: &Option<StopStage>, assm_path: &str, debug: b
     }
 
     let tacky = gen_tacky(&ast, &mut type_checker.symbols);
-    
+
     if debug {
         // println!("Assm Path: {}", assm_path);
 
