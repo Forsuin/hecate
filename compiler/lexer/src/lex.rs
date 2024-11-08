@@ -14,6 +14,8 @@ pub enum LexError {
     InvalidSuffix(String),
     #[error("number out of range")]
     OutOfRange(String),
+    #[error("Hexadecimal floating point literals are not supported")]
+    UnsupportedLiteral,
 }
 
 #[derive(Debug, Clone)]
@@ -56,13 +58,15 @@ impl PartialEq for Token {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum TokenValue {
     None,
     Integer(i32),
     Long(i64),
     UnsignedInt(u32),
     UnsignedLong(u64),
+    Float(f32),
+    Double(f64),
     String(String),
     Ident(String),
     Error(LexError),
@@ -124,6 +128,8 @@ pub enum TokenType {
     Long,
     Signed,
     Unsigned,
+    Float,
+    Double,
     If,
     Else,
     Void,
@@ -150,11 +156,14 @@ pub enum TokenType {
 
 const EOF: char = '\0';
 
+#[derive(PartialEq)]
 enum ConstType {
     Int,
     Long,
     UnsignedInt,
     UnsignedLong,
+    Float,
+    Double,
 }
 
 pub struct Lexer<'a> {
@@ -339,8 +348,10 @@ impl<'a> Lexer<'a> {
                 }
                 _ => TokenType::Greater,
             },
-            _c @ '0'..='9' => self.number(),
-            _c @ 'a'..='z' | _c @ 'A'..='Z' | _c @ '_' => self.identifier(start),
+            c if c.is_ascii_digit() || (c == '.' && self.peek().is_ascii_digit()) => {
+                self.number()
+            }
+            'a'..='z' | 'A'..='Z' | '_' => self.identifier(start),
             ' ' | '\r' | '\t' => TokenType::Whitespace,
             '\n' => {
                 self.line += 1;
@@ -379,79 +390,153 @@ impl<'a> Lexer<'a> {
         Token::new(token_type, start, end, token_value, self.line, col)
     }
 
-    fn convert_constant_value(&mut self, source: &str) -> Result<TokenValue, LexError> {
-        let suffix = source.trim_start_matches(char::is_numeric);
-        // get just prefix, if no suffix to strip, just use source
-        let prefix = source
-            .strip_suffix(suffix)
-            .unwrap_or(source);
+    fn try_convert_to_int(&mut self, source: &str) -> Option<TokenValue> {
+        let mut num_str = source;
 
-        // check if constant ends with suffix
-        let const_type = match suffix {
-            "" => ConstType::Int,
-            suffix => self.check_valid_suffix(suffix)?,
+        // read as binary, octal, decimal, or hex number
+        let mut base = 10;
+        if (source.starts_with("0x") || source.starts_with("0X"))  && source.chars().nth(2).map_or(false, |c| c.is_ascii_hexdigit()) {
+            let mut chars = source.chars();
+            chars.next();
+            chars.next();
+            num_str = chars.as_str();
+            base = 16;
+        }
+        else if (source.starts_with("0b") || source.starts_with("0B")) && matches!(source.chars().nth(2), Some('0') | Some('1')) {
+            let mut chars = source.chars();
+            chars.next();
+            chars.next();
+            num_str = chars.as_str();
+            base = 2;
+        }
+        else if source.starts_with("0") {
+            base = 8;
+        }
+
+        let prefix = num_str.trim_end_matches(['l', 'u']);
+        
+        let val = i64::from_str_radix(prefix, base);
+
+        // source is a floating point type
+        if val.is_err() {
+            return None;
+        }
+
+        let val = val.unwrap();
+
+        let suffix = num_str.strip_prefix(|c: char| c.is_ascii_hexdigit()).unwrap().to_ascii_lowercase();
+
+        // read U, L, or LL suffixes
+        let mut l = false;
+        let mut u = false;
+
+        match suffix.as_str() {
+            "llu" | "ull" | "lu" | "ul" => {
+                l = true;
+                u = true;
+            }
+            "l" => {
+                l = true;
+            }
+            "u" => {
+                u = true;
+            }
+            "" => {}
+            _ => {
+                unreachable!("Internal Error: Should not be anything else in integer suffix, suffix is: '{}'", suffix)
+            }
+        }
+
+        let ty = if base == 10 {
+            if l && u {
+               ConstType::UnsignedLong
+            }
+            else if l {
+                ConstType::Long
+            }
+            else if u {
+                if (val >> 32) != 0 { ConstType::UnsignedLong } else { ConstType::UnsignedInt }
+            }
+            else if (val >> 31) != 0 { ConstType::Long } else { ConstType::Int }
+        }
+        else if l && u {
+            ConstType::UnsignedLong
+        } else if l {
+            if (val >> 63) != 0 { ConstType::UnsignedLong } else { ConstType::Long }
+        } else if u {
+            if (val >> 32) != 0 { ConstType::UnsignedLong } else { ConstType::UnsignedInt }
+        } else if (val >> 63) != 0 {
+            ConstType::UnsignedLong
+        } else if (val >> 32) != 0 {
+            ConstType::Long
+        } else if (val >> 31) != 0 {
+            ConstType::UnsignedInt
+        } else {
+            ConstType::Int
         };
 
-        Ok(match const_type {
-            ConstType::Int => {
-                // try to parse as an int, but automatically convert to long if too big
-                match prefix.parse::<i32>() {
-                    Ok(val) => TokenValue::Integer(val),
-                    Err(_) => match prefix.parse::<i64>() {
-                        Ok(val) => TokenValue::Long(val),
-                        Err(_) => {
-                            return Err(LexError::OutOfRange(source.to_string()));
-                        }
-                    },
-                }
-            }
-            ConstType::Long => TokenValue::Long(prefix.parse::<i64>().unwrap()),
-            ConstType::UnsignedInt => {
-                // try to parse as an uint, but automatically convert to long if too big
-                match prefix.parse::<u32>() {
-                    Ok(val) => TokenValue::UnsignedInt(val),
-                    Err(_) => match prefix.parse::<u64>() {
-                        Ok(val) => TokenValue::UnsignedLong(val),
-                        Err(_) => {
-                            return Err(LexError::OutOfRange(source.to_string()));
-                        }
-                    },
-                }
-            }
-            ConstType::UnsignedLong => {
-                TokenValue::UnsignedLong(prefix.parse::<u64>().unwrap())
-            }
+        Some(match ty {
+            ConstType::Int => { TokenValue::Integer(val as i32) }
+            ConstType::Long => { TokenValue::Long(val) }
+            ConstType::UnsignedInt => { TokenValue::UnsignedInt(val as u32) }
+            ConstType::UnsignedLong => { TokenValue::UnsignedLong(val as u64)}
+            _ => unreachable!("Internal Error: Attemped literal conversion to int, found floating point type")
         })
     }
 
-    fn check_valid_suffix(&mut self, source: &str) -> Result<ConstType, LexError> {
-        match source {
-            "" => Ok(ConstType::Int),
-            "l" | "L" | "ll" | "LL" => Ok(ConstType::Long),
-            "u" | "U"  => Ok(ConstType::UnsignedInt),
-            "ul" | "UL" | "lu" | "LU" => Ok(ConstType::UnsignedLong),
-            suffix => Err(LexError::InvalidSuffix(suffix.to_string())),
+    fn convert_constant_value(&mut self, source: &str) -> Result<TokenValue, LexError> {
+        // try to convert to integer value first
+        // can be (unsigned) int/long
+        if let Some(value) = self.try_convert_to_int(source) {
+            return Ok(value)
         }
+
+        let prefix = source.trim_end_matches(['f', 'l']);
+        let suffix = source.trim_start_matches(|c: char| !matches!(c.to_ascii_lowercase(), 'f' | 'l'));
+        
+        let val = prefix.parse::<f64>();
+        
+        if val.is_err() {
+            return Err(LexError::UnsupportedLiteral)
+        }
+        
+        let val = val.unwrap();
+        
+        let ty = if suffix == "f" {
+            ConstType::Float
+        }
+        else if suffix == "l" {
+            ConstType::Double
+        }
+        else {
+            ConstType::Double
+        };
+        
+        
+        if ty == ConstType::Float {
+            Ok(TokenValue::Float(val as f32))
+        }
+        else {
+            Ok(TokenValue::Double(val))
+        }
+        
     }
 
     fn number(&mut self) -> TokenType {
-        while self.peek().is_ascii_digit() {
-            self.advance();
-        }
+        // already consumed first character of number literal, whether it's '.' or digit
 
-        // also consume suffix
+        // Consume entire numeric literal, more checks happen later to figure out type and if it has a valid suffix
         loop {
             match self.peek() {
-                // suffixes are ok
-                'l' | 'L' | 'u' | 'U' => {
+                // is scientific notation then consume next two chars
+                c if matches!(c, 'e' | 'E' | 'p' | 'P') && matches!(self.peek_second(), '+' | '-') => {
+                    self.advance();
                     self.advance();
                 }
-                // other identifier characters are not ok
-                c if c.is_alphabetic() => return TokenType::Error,
-                '_' => return TokenType::Error,
-
-                // everything else is ok
-                _ => break,
+                c if c.is_alphanumeric() || c == '.' => {
+                    self.advance();
+                }
+                _ => break
             }
         }
 
@@ -470,6 +555,8 @@ impl<'a> Lexer<'a> {
             "long" => TokenType::Long,
             "signed" => TokenType::Signed,
             "unsigned" => TokenType::Unsigned,
+            "double" => TokenType::Double,
+            "float" => TokenType::Float,
             "if" => TokenType::If,
             "else" => TokenType::Else,
             "void" => TokenType::Void,
@@ -496,6 +583,12 @@ impl<'a> Lexer<'a> {
 
     fn peek(&self) -> char {
         self.chars.clone().next().unwrap_or(EOF)
+    }
+
+    fn peek_second(&self) -> char {
+        let mut chars = self.chars.clone();
+        chars.next();
+        chars.next().unwrap()
     }
 
     fn advance(&mut self) -> Option<char> {
@@ -744,7 +837,7 @@ mod tests {
         let tokens = lexer.tokenize();
         let tokens: Vec<_> = tokens.map(|t| t.kind).collect();
 
-        assert_eq!(tokens, expected)
+        assert_eq!(expected, tokens)
     }
 
     #[test]
@@ -756,6 +849,54 @@ mod tests {
         let tokens = lexer.tokenize();
         let tokens: Vec<_> = tokens.map(|t| t.kind).collect();
 
-        assert_eq!(tokens, expected)
+        assert_eq!(expected, tokens)
+    }
+
+    #[test]
+    fn hex_int_literal() {
+        let src = "int x = 0x5;";
+        let expected = vec![Int, Identifier, Equal, Constant, Semicolon];
+
+        let mut lexer = Lexer::new(src);
+        let tokens = lexer.tokenize();
+        let tokens: Vec<_> = tokens.map(|t| t.kind).collect();
+
+        assert_eq!(expected, tokens)
+    }
+    
+    #[test]
+    fn float_literal() {
+        let src = "float x = 5.0f;";
+        let expected = vec![Float, Identifier, Equal, Constant, Semicolon];
+
+        let mut lexer = Lexer::new(src);
+        let tokens = lexer.tokenize();
+        let tokens: Vec<_> = tokens.map(|t| t.kind).collect();
+
+        assert_eq!(expected, tokens)
+    }
+
+    #[test]
+    fn double_literal() {
+        let src = "double x = 5.0;";
+        let expected = vec![Double, Identifier, Equal, Constant, Semicolon];
+
+        let mut lexer = Lexer::new(src);
+        let tokens = lexer.tokenize();
+        let tokens: Vec<_> = tokens.map(|t| t.kind).collect();
+
+        assert_eq!(expected, tokens)
+    }
+    
+    #[test]
+    fn long_double_literal() {
+        let src = "long double x = 5.0l;";
+        let expected = vec![Long, Double, Identifier, Equal, Constant, Semicolon];
+
+        let mut lexer = Lexer::new(src);
+        let tokens = lexer.tokenize();
+        let tokens: Vec<_> = tokens.map(|t| t.kind).collect();
+
+        assert_eq!(expected, tokens)
     }
 }
