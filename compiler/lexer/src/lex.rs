@@ -164,6 +164,7 @@ enum ConstType {
     UnsignedLong,
     Float,
     Double,
+    LongDouble,
 }
 
 pub struct Lexer<'a> {
@@ -413,7 +414,7 @@ impl<'a> Lexer<'a> {
             base = 8;
         }
 
-        let prefix = num_str.trim_end_matches(['l', 'u']);
+        let prefix = num_str.trim_end_matches(['l', 'u', 'U', 'L']);
         
         let val = i64::from_str_radix(prefix, base);
 
@@ -424,7 +425,7 @@ impl<'a> Lexer<'a> {
 
         let val = val.unwrap();
 
-        let suffix = num_str.strip_prefix(|c: char| c.is_ascii_hexdigit()).unwrap().to_ascii_lowercase();
+        let suffix = num_str.trim_start_matches(|c: char| c.is_ascii_hexdigit()).to_ascii_lowercase();
 
         // read U, L, or LL suffixes
         let mut l = false;
@@ -443,7 +444,7 @@ impl<'a> Lexer<'a> {
             }
             "" => {}
             _ => {
-                unreachable!("Internal Error: Should not be anything else in integer suffix, suffix is: '{}'", suffix)
+                unreachable!("Internal Error at {}:{}: '{}' contains invalid integer suffix '{}'", self.line, self.col, source, suffix)
             }
         }
 
@@ -491,7 +492,7 @@ impl<'a> Lexer<'a> {
             return Ok(value)
         }
 
-        let prefix = source.trim_end_matches(['f', 'l']);
+        let prefix = source.trim_end_matches(['f', 'l', 'u', 'F', 'L', 'U']);
         let suffix = source.trim_start_matches(|c: char| !matches!(c.to_ascii_lowercase(), 'f' | 'l'));
         
         let val = prefix.parse::<f64>();
@@ -506,7 +507,7 @@ impl<'a> Lexer<'a> {
             ConstType::Float
         }
         else if suffix == "l" {
-            ConstType::Double
+            ConstType::LongDouble
         }
         else {
             ConstType::Double
@@ -533,7 +534,9 @@ impl<'a> Lexer<'a> {
                     self.advance();
                     self.advance();
                 }
-                c if c.is_alphanumeric() || c == '.' => {
+                // '_' to make sure we consume invalid characters that are still part of number
+                // that way we can have more accurate error messages
+                c if c.is_alphanumeric() || c == '.' || c == '_' => {
                     self.advance();
                 }
                 _ => break
@@ -631,7 +634,7 @@ mod tests {
         assert_eq!(
             tokens
                 .iter()
-                .filter(|t| t.kind == TokenType::MinusMinus)
+                .filter(|t| t.kind == MinusMinus)
                 .collect::<Vec<_>>()
                 .len(),
             0
@@ -639,7 +642,7 @@ mod tests {
         assert_eq!(
             tokens
                 .iter()
-                .filter(|t| t.kind == TokenType::Minus)
+                .filter(|t| t.kind == Minus)
                 .collect::<Vec<_>>()
                 .len(),
             2
@@ -892,6 +895,18 @@ mod tests {
     fn long_double_literal() {
         let src = "long double x = 5.0l;";
         let expected = vec![Long, Double, Identifier, Equal, Constant, Semicolon];
+
+        let mut lexer = Lexer::new(src);
+        let tokens = lexer.tokenize();
+        let tokens: Vec<_> = tokens.map(|t| t.kind).collect();
+
+        assert_eq!(expected, tokens)
+    }
+    
+    #[test]
+    fn bad_float_syntax() {
+        let src = "2._;";
+        let expected = vec![Error, Semicolon];
 
         let mut lexer = Lexer::new(src);
         let tokens = lexer.tokenize();
