@@ -12,6 +12,12 @@ pub enum Type {
     Func(FuncType),
 }
 
+impl Type {
+    pub fn is_floating(&self) -> bool {
+        matches!(self, Type::Double | Type::Float)
+    }
+}
+
 impl Display for Type {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(

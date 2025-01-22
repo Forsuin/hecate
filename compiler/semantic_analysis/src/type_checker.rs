@@ -412,11 +412,17 @@ impl TypeChecker {
                 self.check_expr(left)?;
                 self.check_expr(right)?;
 
+                let left_type = left.get_type().unwrap();
+                let right_type = right.get_type().unwrap();
+                let common_type = get_common_type(left_type.clone(), right_type.clone());
+                
                 match op {
                     BinaryOp::BitshiftLeft | BinaryOp::BitshiftRight => {
-                        // result has type of left operand
-                        let left_type = left.get_type().unwrap();
+                        if common_type.is_floating() {
+                            return Err(SemErr::new("Invalid operands to bitshift operator, cannot use floating point types"))
+                        }
 
+                        // result has type of left operand
                         expr.set_type(left_type);
                     }
                     BinaryOp::And | BinaryOp::Or => {
@@ -424,9 +430,6 @@ impl TypeChecker {
                         expr.set_type(Type::Int);
                     }
                     _ => {
-                        let left_type = left.get_type().unwrap();
-                        let right_type = right.get_type().unwrap();
-                        let common_type = get_common_type(left_type, right_type);
 
                         let left_cast = convert_to(left, common_type.clone());
                         let right_cast = convert_to(right, common_type.clone());
@@ -435,7 +438,7 @@ impl TypeChecker {
                         **right = right_cast;
 
                         if *op == BinaryOp::Modulo && common_type.is_floating() {
-                            return Err(SemErr::new("Invalid operands to modulo, double"));
+                            return Err(SemErr::new("Invalid operands to modulo, cannot use floating point types"));
                         }
                         
                         match op {
@@ -447,6 +450,10 @@ impl TypeChecker {
                             | BinaryOp::BitwiseAnd
                             | BinaryOp::BitwiseOr
                             | BinaryOp::BitwiseXor => {
+                                if op.is_bitwise() && common_type.is_floating() {
+                                    return Err(SemErr::new("Invalid operands to binary operator, cannot use floating point types"));
+                                }
+                                
                                 expr.set_type(common_type);
                             }
                             _ => {
@@ -477,11 +484,22 @@ impl TypeChecker {
 
                 let left_type = lvalue.get_type().unwrap();
                 let right_type = body.get_type().unwrap();
-
+                let common_type = get_common_type(left_type.clone(), right_type.clone());
+                
                 let result_type = match op {
-                    BinaryOp::BitshiftLeft | BinaryOp::BitshiftRight => left_type,
+                    BinaryOp::BitshiftLeft | BinaryOp::BitshiftRight => {
+                        if common_type.is_floating() {
+                            return Err(SemErr::new("Invalid operands to compound assignment operator, cannot use floating point types"));
+                        }
+                        
+                        left_type
+                    },
                     _ => {
-                        let common_type = get_common_type(left_type, right_type);
+
+                        if (op.is_bitwise() || *op == BinaryOp::Modulo) && common_type.is_floating() {
+                            return Err(SemErr::new("Invalid operands to compound assignment operator, cannot use floating point types"));
+                        }
+                        
                         let right_cast = convert_to(body, common_type.clone());
                         **body = right_cast;
 
