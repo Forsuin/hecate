@@ -13,8 +13,8 @@ impl Display for SemErr {
 }
 
 impl SemErr {
-    pub(crate) fn new(message: String) -> Self {
-        Self { message }
+    pub fn new<S: Into<String>>(message: S) -> Self {
+        Self { message: message.into() }
     }
 }
 
