@@ -195,6 +195,13 @@ pub fn get_common_type(first: Type, second: Type) -> Type {
     if first == second {
         return first;
     }
+    
+    if first == Type::Double || second == Type::Double {
+        return Type::Double
+    }
+    else if first == Type::Float || second == Type::Float {
+        return Type::Float
+    }
 
     if get_size(&first) == get_size(&second) {
         return if is_signed(&first) { second } else { first };
