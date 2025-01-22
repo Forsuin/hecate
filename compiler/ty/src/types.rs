@@ -109,6 +109,42 @@ pub enum Constant {
     Double(f64),
 }
 
+#[derive(Debug, Eq, PartialEq, Copy, Clone, Hash)]
+pub enum SwitchableConstant {
+    Int(i32),
+    UInt(u32),
+    Long(i64),
+    ULong(u64),
+}
+
+impl From<Constant> for SwitchableConstant {
+    fn from(value: Constant) -> Self {
+        match value {
+            Constant::Int(val) => SwitchableConstant::Int(val),
+            Constant::UInt(val) => SwitchableConstant::UInt(val),
+            Constant::Long(val) => SwitchableConstant::Long(val),
+            Constant::ULong(val) => SwitchableConstant::ULong(val),
+            Constant::Float(_) => {
+                panic!("Internal Error: Unable to convert floating point constant to switchable constant")
+            }
+            Constant::Double(_) => {
+                panic!("Internal Error: Unable to convert floating point constant to switchable constant")
+            }
+        }
+    }
+}
+
+impl From<SwitchableConstant> for Constant {
+    fn from(value: SwitchableConstant) -> Self {
+        match value {
+            SwitchableConstant::Int(val) => Constant::Int(val), 
+            SwitchableConstant::UInt(val) => Constant::UInt(val),
+            SwitchableConstant::Long(val) => Constant::Long(val),
+            SwitchableConstant::ULong(val) => Constant::ULong(val),
+        }
+    }
+}
+
 impl Display for Constant {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
