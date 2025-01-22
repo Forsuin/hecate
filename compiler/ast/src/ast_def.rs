@@ -2,18 +2,18 @@ use ty::{Constant, Type};
 
 /// Defines AST datatypes
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct TranslationUnit {
     pub decls: Vec<Decl>,
 }
 
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Decl {
     FuncDecl(FuncDecl),
     VarDecl(VarDecl),
 }
 
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct FuncDecl {
     pub ident: String,
     pub params: Vec<String>,
@@ -22,7 +22,7 @@ pub struct FuncDecl {
     pub func_type: Type,
 }
 
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct VarDecl {
     pub name: String,
     pub init: Option<Expr>,
@@ -36,24 +36,24 @@ pub enum StorageClass {
     Extern,
 }
 
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Block {
     pub items: Vec<BlockItem>,
 }
 
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum BlockItem {
     S(Stmt),
     D(Decl),
 }
 
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum ForInit {
     Decl(VarDecl),
     Expr(Option<Expr>),
 }
 
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Stmt {
     Compound {
         block: Block,
@@ -116,7 +116,7 @@ pub enum Stmt {
     Null,
 }
 
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Expr {
     pub kind: ExprKind,
     ty: Option<Type>,
@@ -136,7 +136,7 @@ impl Expr {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum ExprKind {
     Constant(Constant),
     Var(String),

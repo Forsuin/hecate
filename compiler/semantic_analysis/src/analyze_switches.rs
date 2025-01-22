@@ -1,12 +1,13 @@
 use std::collections::HashMap;
 
 use ast::*;
-use ty::{const_convert, Constant, Type};
+use ty::{const_convert, SwitchableConstant, Type};
 use unique_ident::make_label;
 
 use crate::sem_err::*;
 
-type CaseMap = HashMap<Option<Constant>, String>;
+type CaseMap = HashMap<Option<SwitchableConstant>, String>;
+
 #[derive(Clone)]
 struct SwitchCtx {
     pub ty: Type,
@@ -70,7 +71,7 @@ fn analyze_stmt(stmt: &mut Stmt, case_map: &mut Option<SwitchCtx>) -> SemanticRe
             label,
         } => {
             let const_expr = match &constant.kind {
-                ExprKind::Constant(c) => Some(c.clone()),
+                ExprKind::Constant(c) => Some(c.clone().into()),
                 _ => {
                     return Err(SemErr::new(format!(
                         "Non-constant label in case statement: {:#?}",
@@ -139,7 +140,7 @@ fn analyze_stmt(stmt: &mut Stmt, case_map: &mut Option<SwitchCtx>) -> SemanticRe
 }
 
 fn analyze_case(
-    key: Option<Constant>,
+    key: Option<SwitchableConstant>,
     case_map: &mut Option<SwitchCtx>,
     label: &str,
     body: &mut Stmt,
@@ -151,7 +152,7 @@ fn analyze_case(
         .expect("Found case statement outside of switch");
 
     // convert case to type of switch statement
-    let key = key.map(|c| const_convert(&case_map.clone().unwrap().ty, c.clone()));
+    let key = key.map(|c| const_convert(&case_map.clone().unwrap().ty, c.clone().into()).into());
 
     // check for duplicate cases
     if case_map.as_mut().unwrap().map.contains_key(&key) {

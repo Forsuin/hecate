@@ -239,6 +239,8 @@ impl TypeChecker {
                     Type::Long => StaticInit::Long(0),
                     Type::UInt => StaticInit::UInt(0),
                     Type::ULong => StaticInit::ULong(0),
+                    Type::Float => StaticInit::Float(0.0),
+                    Type::Double => StaticInit::Double(0.0),
                     Type::Func(_) => {
                         return Err(SemErr::new(format!(
                             "Internal Error: Attempted to static init function '{}'",
@@ -556,6 +558,12 @@ impl TypeChecker {
                 Constant::ULong(_) => {
                     expr.set_type(Type::ULong)
                 }
+                Constant::Float(_) => {
+                    expr.set_type(Type::Float)
+                }
+                Constant::Double(_) => {
+                    expr.set_type(Type::Double)
+                }
             },
             ExprKind::Cast {
                 target_type,
@@ -590,6 +598,8 @@ fn to_static_init(var_type: Type, init: Expr) -> SemanticResult<InitialVal> {
                 Constant::Long(val) => StaticInit::Long(val),
                 Constant::UInt(val) => StaticInit::UInt(val),
                 Constant::ULong(val) => StaticInit::ULong(val),
+                Constant::Float(val) => StaticInit::Float(val), 
+                Constant::Double(val) => StaticInit::Double(val),
             };
             Ok(InitialVal::Initial(init_val))
         }

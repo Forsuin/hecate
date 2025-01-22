@@ -91,6 +91,8 @@ impl Parser {
             match_token_types!(
                 TokenType::Int,
                 TokenType::Long,
+                TokenType::Float,
+                TokenType::Double,
                 TokenType::Signed,
                 TokenType::Unsigned,
                 TokenType::Static,
@@ -140,18 +142,16 @@ impl Parser {
     fn parse_specifier_list(&mut self) -> Result<Vec<Token>, ParseError> {
         let mut specifiers = vec![];
 
-        loop {
-            match self.peek() {
-                match_token_types!(
-                    TokenType::Int,
-                    TokenType::Long,
-                    TokenType::Signed,
-                    TokenType::Unsigned,
-                    TokenType::Static,
-                    TokenType::Extern
-                ) => {
-                    specifiers.push(self.tokens.next().unwrap());
-                }
+        while let Some(t) = self.peek() {
+            match t.kind {
+                TokenType::Int |
+                TokenType::Long |
+                TokenType::Float |
+                TokenType::Double |
+                TokenType::Signed |
+                TokenType::Unsigned |
+                TokenType::Static |
+                TokenType::Extern => specifiers.push(self.tokens.next().unwrap()),
                 _ => break,
             }
         }
@@ -163,9 +163,17 @@ impl Parser {
         &mut self,
         specifiers: Vec<Token>,
     ) -> Result<(Type, Option<StorageClass>), ParseError> {
-        let (types, storage_classes): (Vec<_>, Vec<_>) = specifiers
-            .into_iter()
-            .partition(|spec| matches!(spec.kind, TokenType::Int | TokenType::Long | TokenType::Unsigned | TokenType::Signed));
+        let (types, storage_classes): (Vec<_>, Vec<_>) = specifiers.into_iter().partition(|spec| {
+            matches!(
+                spec.kind,
+                TokenType::Int
+                    | TokenType::Long
+                    | TokenType::Unsigned
+                    | TokenType::Signed
+                    | TokenType::Double
+                    | TokenType::Float
+            )
+        });
 
         if storage_classes.len() > 1 {
             return Err(ParseError::new(format!(
@@ -212,12 +220,34 @@ impl Parser {
             ));
         }
 
+        if types.contains(&TokenType::Float) && types.len() > 1 {
+            return Err(ParseError::new(
+                "Cannot combine float type with any other type specifiers".to_string(),
+            ));
+        }
+
+        if types.contains(&TokenType::Double)
+            && types.len() > 1
+            && types.iter().any(|item| *item != TokenType::Long)
+        {
+            return Err(ParseError::new(
+                "Type specifier cannot combine double with any other type specifer besides long"
+                    .to_string(),
+            ));
+        }
+
         if types.contains(&TokenType::Unsigned) && types.contains(&TokenType::Long) {
             Ok(Type::ULong)
         } else if types.contains(&TokenType::Unsigned) {
             Ok(Type::UInt)
         } else if types.contains(&TokenType::Long) {
             Ok(Type::Long)
+        } else if types == [TokenType::Float] {
+            Ok(Type::Float)
+        } else if types == [TokenType::Double]
+            || (types.contains(&TokenType::Double) && types.contains(&TokenType::Long))
+        {
+            Ok(Type::Double)
         } else {
             Ok(Type::Int)
         }
@@ -654,6 +684,8 @@ impl Parser {
             match_token_types!(
                 TokenType::Int,
                 TokenType::Long,
+                TokenType::Float,
+                TokenType::Double,
                 TokenType::Signed,
                 TokenType::Unsigned,
                 TokenType::Static,
@@ -873,16 +905,22 @@ impl Parser {
                     kind: TokenType::Constant,
                     value: TokenValue::UnsignedInt(val),
                     ..
-                } => {
-                    Ok(Constant::UInt(val))
-                }
+                } => Ok(Constant::UInt(val)),
                 Token {
                     kind: TokenType::Constant,
                     value: TokenValue::UnsignedLong(val),
                     ..
-                } => {
-                    Ok(Constant::ULong(val))
-                }
+                } => Ok(Constant::ULong(val)),
+                Token {
+                    kind: TokenType::Constant,
+                    value: TokenValue::Float(val),
+                    ..
+                } => Ok(Constant::Float(val)),
+                Token {
+                    kind: TokenType::Constant,
+                    value: TokenValue::Double(val),
+                    ..
+                } => Ok(Constant::Double(val)),
                 _ => Err(ParseError::new(format!(
                     "Expected constant, found '{:?} at ({}, {})'",
                     token.kind, token.line, token.col
@@ -1154,7 +1192,12 @@ fn get_compound(token_type: TokenType) -> Option<BinaryOp> {
 fn is_type_specifier(kind: TokenType) -> bool {
     matches!(
         kind,
-        TokenType::Int | TokenType::Long | TokenType::Signed | TokenType::Unsigned
+        TokenType::Int
+            | TokenType::Long
+            | TokenType::Signed
+            | TokenType::Unsigned
+            | TokenType::Float
+            | TokenType::Double
     )
 }
 
@@ -1201,6 +1244,12 @@ mod tests {
         };
         ($expr:expr, u64) => {
             Expr::new(ExprKind::Constant(Constant::ULong($expr)))
+        };
+        ($expr:expr, f32) => {
+            Expr::new(ExprKind::Constant(Constant::Float($expr)))
+        };
+        ($expr:expr, f64) => {
+            Expr::new(ExprKind::Constant(Constant::Double($expr)))
         };
     }
 
@@ -1870,6 +1919,60 @@ mod tests {
                 init: Some(constant!(100, u64)),
                 storage_class: None,
                 var_type: Type::ULong,
+            })
+        )
+    }
+
+    #[test]
+    fn float() {
+        let src = "float x = 10.0f;";
+        let tokens = Lexer::new(src).tokenize().collect();
+
+        let ast = Parser::new(tokens).parse_decl().unwrap();
+
+        assert_eq!(
+            ast,
+            Decl::VarDecl(VarDecl {
+                name: "x".to_string(),
+                init: Some(constant!(10.0, f32)),
+                storage_class: None,
+                var_type: Type::Float,
+            })
+        )
+    }
+
+    #[test]
+    fn double() {
+        let src = "double x = 10.0;";
+        let tokens = Lexer::new(src).tokenize().collect();
+
+        let ast = Parser::new(tokens).parse_decl().unwrap();
+
+        assert_eq!(
+            ast,
+            Decl::VarDecl(VarDecl {
+                name: "x".to_string(),
+                init: Some(constant!(10.0, f64)),
+                storage_class: None,
+                var_type: Type::Double,
+            })
+        )
+    }
+
+    #[test]
+    fn long_double() {
+        let src = "long double x = 10.0l;";
+        let tokens = Lexer::new(src).tokenize().collect();
+
+        let ast = Parser::new(tokens).parse_decl().unwrap();
+
+        assert_eq!(
+            ast,
+            Decl::VarDecl(VarDecl {
+                name: "x".to_string(),
+                init: Some(constant!(10.0, f64)),
+                storage_class: None,
+                var_type: Type::Double,
             })
         )
     }
