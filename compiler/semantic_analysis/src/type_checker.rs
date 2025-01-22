@@ -397,6 +397,13 @@ impl TypeChecker {
                     UnaryOp::Not => expr.set_type(Type::Int),
                     _ => {
                         let body_type = body.get_type().unwrap();
+
+                        if *op == UnaryOp::Complement && body_type.is_floating() {
+                            return Err(SemErr::new(
+                                "Can't take the bitwise complement of a double",
+                            ));
+                        }
+
                         expr.set_type(body_type)
                     }
                 }
@@ -427,6 +434,10 @@ impl TypeChecker {
                         **left = left_cast;
                         **right = right_cast;
 
+                        if *op == BinaryOp::Modulo && common_type.is_floating() {
+                            return Err(SemErr::new("Invalid operands to modulo, double"));
+                        }
+                        
                         match op {
                             BinaryOp::Add
                             | BinaryOp::Subtract
