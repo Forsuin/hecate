@@ -246,7 +246,7 @@ impl TypeChecker {
                             "Internal Error: Attempted to static init function '{}'",
                             var.name
                         )));
-                    },
+                    }
                 });
 
                 let static_init = match &var.init {
