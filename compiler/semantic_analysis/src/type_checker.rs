@@ -563,18 +563,10 @@ impl TypeChecker {
                 Constant::Long(_) => {
                     expr.set_type(Type::Long);
                 }
-                Constant::UInt(_) => {
-                    expr.set_type(Type::UInt)
-                }
-                Constant::ULong(_) => {
-                    expr.set_type(Type::ULong)
-                }
-                Constant::Float(_) => {
-                    expr.set_type(Type::Float)
-                }
-                Constant::Double(_) => {
-                    expr.set_type(Type::Double)
-                }
+                Constant::UInt(_) => expr.set_type(Type::UInt),
+                Constant::ULong(_) => expr.set_type(Type::ULong),
+                Constant::Float(_) => expr.set_type(Type::Float),
+                Constant::Double(_) => expr.set_type(Type::Double),
             },
             ExprKind::Cast {
                 target_type,
@@ -609,7 +601,7 @@ fn to_static_init(var_type: Type, init: Expr) -> SemanticResult<InitialVal> {
                 Constant::Long(val) => StaticInit::Long(val),
                 Constant::UInt(val) => StaticInit::UInt(val),
                 Constant::ULong(val) => StaticInit::ULong(val),
-                Constant::Float(val) => StaticInit::Float(val), 
+                Constant::Float(val) => StaticInit::Float(val),
                 Constant::Double(val) => StaticInit::Double(val),
             };
             Ok(InitialVal::Initial(init_val))
